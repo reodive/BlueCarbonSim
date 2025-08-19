@@ -1,0 +1,92 @@
+{
+    "Zostera marina": {
+      "absorption_rate": 5.0,
+      "growth_rate": 0.012,
+      "fixation_rate": 0.75,
+      "light_tolerance": 0.35,
+      "salinity_range": [20, 35],
+      "depth_range": [0.5, 5],
+      "lit_depth_range_m": [0, 10],
+      "model_depth_range": [1, 6]
+    },
+    "Halophila ovalis": {
+      "absorption_rate": 4.2,
+      "growth_rate": 0.018,
+      "fixation_rate": 0.70,
+      "light_tolerance": 0.25,
+      "salinity_range": [15, 38],
+      "depth_range": [0.3, 10],
+      "lit_depth_range_m": [0, 20],
+      "model_depth_range": [1, 8]
+    },
+    "Posidonia oceanica": {
+      "absorption_rate": 3.6,
+      "growth_rate": 0.006,
+      "fixation_rate": 0.82,
+      "light_tolerance": 0.30,
+      "salinity_range": [28, 40],
+      "depth_range": [1, 35],
+      "lit_depth_range_m": [0, 40],
+      "model_depth_range": [2, 8]
+    },
+    "Macrocystis pyrifera": {
+      "absorption_rate": 8.1,
+      "growth_rate": 0.020,
+      "fixation_rate": 0.80,
+      "light_tolerance": 0.45,
+      "salinity_range": [28, 36],
+      "depth_range": [2, 30],
+      "lit_depth_range_m": [5, 30],
+      "model_depth_range": [3, 9]
+    },
+    "Saccharina japonica": {
+      "absorption_rate": 6.8,
+      "growth_rate": 0.018,
+      "fixation_rate": 0.78,
+      "light_tolerance": 0.40,
+      "salinity_range": [25, 35],
+      "depth_range": [2, 20],
+      "lit_depth_range_m": [2, 15],
+      "model_depth_range": [2, 8]
+    },
+    "Chlorella vulgaris": {
+      "absorption_rate": 12.0,
+      "growth_rate": 0.050,
+      "fixation_rate": 0.30,
+      "light_tolerance": 0.10,
+      "salinity_range": [0, 10],
+      "depth_range": [0, 2],
+      "lit_depth_range_m": [0, 30],
+      "model_depth_range": [1, 5]
+    },
+    "Nannochloropsis gaditana": {
+      "absorption_rate": 14.5,
+      "growth_rate": 0.055,
+      "fixation_rate": 0.32,
+      "light_tolerance": 0.12,
+      "salinity_range": [20, 38],
+      "depth_range": [0, 2],
+      "lit_depth_range_m": [0, 50],
+      "model_depth_range": [1, 5]
+    },
+    "Spartina alterniflora": {
+      "absorption_rate": 2.9,
+      "growth_rate": 0.010,
+      "fixation_rate": 0.65,
+      "light_tolerance": 0.28,
+      "salinity_range": [10, 35],
+      "depth_range": [0, 1],
+      "lit_depth_range_m": [0, 1],
+      "model_depth_range": [1, 2]
+    },
+    "Rhizophora spp.": {
+      "absorption_rate": 1.8,
+      "growth_rate": 0.004,
+      "fixation_rate": 0.90,
+      "light_tolerance": 0.30,
+      "salinity_range": [5, 35],
+      "depth_range": [0, 1],
+      "lit_depth_range_m": [0, 1.5],
+      "model_depth_range": [1, 2]
+    }
+  }
