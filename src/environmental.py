@@ -22,7 +22,7 @@ def get_environmental_factors(x, y, step, total_steps=150, width=100, height=100
     }
 
 
-def compute_efficiency_score(plant, env, salt_tolerance=None, current_salt=None, bottom_type=None):
+def compute_efficiency_score(plant, env, bottom_type=None):
     temp_sigma = 5.0
     temp_eff = math.exp(-0.5 * ((env["temperature"] - plant.opt_temp) / temp_sigma) ** 2)
     light_eff = min(env["light"] / plant.light_tolerance, 1.0)
