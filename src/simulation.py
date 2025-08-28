@@ -5,8 +5,12 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+<<<<<<< HEAD
 
 from models.particle import initialize_particles
+=======
+from models.particle import Particle, initialize_particles
+>>>>>>> 9e0959a (ver mac)
 from models.plant import Plant
 from environment import get_environmental_factors, compute_efficiency_score
 from terrain import create_terrain
@@ -36,6 +40,7 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     # 地形と深度マップ
     terrain, depth_map = create_terrain(width, height)
 
+<<<<<<< HEAD
     # 出力用シリーズ
     env_series, nutrient_series = [], []
     internal_series, fixed_series, released_series, carbon_series = [], [], [], []
@@ -44,6 +49,10 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     zostera_absorbed_series, kelp_absorbed_series, chlorella_absorbed_series = [], [], []
 
     # 植物プロファイル読み込み
+=======
+    os.makedirs("results", exist_ok=True)
+
+>>>>>>> 9e0959a (ver mac)
     with open("data/plants.json", "r") as f:
         profiles = json.load(f)
 
@@ -193,7 +202,12 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     # 結果CSV保存
     os.makedirs("results", exist_ok=True)
     for plant in plants:
+<<<<<<< HEAD
         with open(os.path.join("results", f"result_{plant.name}.csv"), "w", newline="") as f:
+=======
+        total_absorbed = plant.total_absorbed
+        with open(f"results/result_{plant.name}.csv", "w", newline="") as f:
+>>>>>>> 9e0959a (ver mac)
             writer = csv.writer(f)
             writer.writerow(["total_absorbed", "total_fixed", "total_growth"])
             writer.writerow([plant.total_absorbed, plant.total_fixed, plant.total_growth])

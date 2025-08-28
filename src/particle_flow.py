@@ -50,8 +50,17 @@ def inject_particles(particles, terrain, num_new_particles=20, sources=None):
             if 0 <= int(y) < height and 0 <= int(x) < width:
                 if terrain[int(y), int(x)] == 1:
                     new_particles.append(Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0))
+<<<<<<< HEAD
         if isinstance(particles, np.ndarray):
         return np.concatenate([particles, np.array(new_particles, dtype=object)])
     else:
         particles.extend(new_particles)
+=======
+        if isinstance(particles, list):
+        particles.extend(new_particles)
+        return particles
+    elif len(new_particles) > 0:
+        return np.concatenate((particles, new_particles))
+    else:
+>>>>>>> 9e0959a (ver mac)
         return particles
