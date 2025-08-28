@@ -4,8 +4,6 @@ class Plant:
     def __init__(
         self,
         name,
-        absorb_efficiency,
-        growth_speed,
         fixation_ratio,
         release_ratio,
         structure_density,
@@ -19,8 +17,6 @@ class Plant:
         radius=3,
     ):
         self.name = name
-        self.absorb_efficiency = absorb_efficiency
-        self.growth_speed = growth_speed
         self.fixation_ratio = fixation_ratio
         self.release_ratio = release_ratio
         self.structure_density = structure_density
@@ -37,10 +33,10 @@ class Plant:
         self.total_growth = 0
 
     def absorb(self, base_absorption, efficiency_score=1.0):
-        absorbed = self.absorb_efficiency * base_absorption * efficiency_score
+        absorbed = self.absorption_efficiency * base_absorption * efficiency_score
         self.total_absorbed += absorbed
         fixed = absorbed * self.fixation_ratio
         self.total_fixed += fixed
-        growth = absorbed * self.growth_speed
+        growth = absorbed * self.growth_rate
         self.total_growth += growth
         return absorbed, fixed, growth
