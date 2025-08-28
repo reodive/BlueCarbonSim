@@ -4,24 +4,44 @@ from models.particle import Particle
 
 
 def diffuse_particles(particles, terrain, flow_field):
+    """
+    粒子の拡散・移流（簡易）と開境界の処理。
+    - 左端: 河川側（主に入流想定）
+    - 右端: 外洋側（外向き速度で到達時に流出として削除）
+    上下端も外向き到達時は削除。
+    戻り値: (更新後粒子配列, 流出した総質量)
+    """
     height, width = terrain.shape
     new_particles = []
+    outflow_mass = 0.0
     for particle in particles:
         x, y = particle.x, particle.y
         ix, iy = int(y), int(x)
         if 0 <= iy < flow_field.shape[0] and 0 <= ix < flow_field.shape[1]:
             flow_x, flow_y = flow_field[iy, ix]
         else:
-            flow_x, flow_y = 0, 0
+            flow_x, flow_y = 0.0, 0.0
         dx = np.random.normal(flow_x, 0.5)
         dy = np.random.normal(flow_y, 0.5)
-        new_x = np.clip(x + dx, 0, width - 1)
-        new_y = np.clip(y + dy, 0, height - 1)
+        trial_x = x + dx
+        trial_y = y + dy
+        new_x = float(np.clip(trial_x, 0, width - 1))
+        new_y = float(np.clip(trial_y, 0, height - 1))
+
+        # 開境界: 外向きに境界を跨いだ場合は流出扱い
+        crossed_left = (new_x == 0 and trial_x < 0)
+        crossed_right = (new_x == width - 1 and trial_x > (width - 1))
+        crossed_top = (new_y == 0 and trial_y < 0)
+        crossed_bottom = (new_y == height - 1 and trial_y > (height - 1))
+        if crossed_left or crossed_right or crossed_top or crossed_bottom:
+            outflow_mass += particle.mass
+            continue
+
         if terrain[int(new_y), int(new_x)] == 1:
             particle.x = new_x
             particle.y = new_y
         new_particles.append(particle)
-    return np.array(new_particles)
+    return np.array(new_particles, dtype=object), outflow_mass
 
 
 def generate_dynamic_flow_field(width, height, step):
@@ -39,8 +59,9 @@ def inject_particles(particles, terrain, num_new_particles=20, sources=None):
     height, width = terrain.shape
     new_particles = []
     if sources is None:
+        # 左端: 河川流入源 / 右端: 外洋側（主に流出）
         sources = [(0, 50), (99, 20)]
-        n_sources = len(sources)
+    n_sources = len(sources)
     base, remainder = divmod(num_new_particles, n_sources)
     for i, (sx, sy) in enumerate(sources):
         count = base + (1 if i < remainder else 0)
@@ -50,7 +71,7 @@ def inject_particles(particles, terrain, num_new_particles=20, sources=None):
             if 0 <= int(y) < height and 0 <= int(x) < width:
                 if terrain[int(y), int(x)] == 1:
                     new_particles.append(Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0))
-        if isinstance(particles, list):
+    if isinstance(particles, list):
         particles.extend(new_particles)
         return particles
     elif len(new_particles) > 0:

@@ -50,9 +50,9 @@ def get_environmental_factors(
     width: int = 100,
     height: int = 100,
     # 物理・環境パラメータ（必要に応じて configs から注入）
-    kd_m_inv: float = 0.7,           # 光学減衰係数 [m^-1]（沿岸の例）
+    kd_m_inv: float = 0.8,           # 光学減衰係数 [m^-1]（沿岸の例: 0.5〜1.2）
     cell_depth_m: Optional[float] = None,  # セル代表深度 [m]。未指定ならyから近似
-    max_depth_m: float = 5.0,        # 深度近似に使う最大水深 [m]
+    max_depth_m: float = 8.0,        # 深度近似に使う最大水深 [m]
     T_mean: float = 20.0,            # 平均水温 [°C]
     T_amp: float = 10.0,             # 季節振幅 [°C]
     T_phase: float = 0.0,            # 温度の季節位相
@@ -63,8 +63,11 @@ def get_environmental_factors(
     S_min: float = 15.0,             # 線形勾配の最小（linear_x用）
     S_max: float = 35.0,             # 線形勾配の最大（linear_x用）
     nutrient_mean: float = 0.5,      # 栄養塩（効率ファクタ）の平均（0..1）
-    nutrient_amp: float = 0.5,       # 栄養塩の振幅（0..1でクリップ）
+    nutrient_amp: float = 0.4,       # 栄養塩の振幅（0..1でクリップ）
     nutrient_phase: float = 0.0,
+    nutrient_pulse_period: int = 90, # 出水パルスの周期（step）
+    nutrient_pulse_width: int = 3,   # パルス幅（step）
+    nutrient_pulse_amp: float = 0.3, # パルス強度（0..1 にクリップ）
 ) -> Dict[str, float]:
     """
     環境フィールドを返す。
@@ -98,8 +101,11 @@ def get_environmental_factors(
     else:  # "constant"
         salinity = float(S_mean)
 
-    # --- 栄養塩（0..1に確実に収める） ---
+    # --- 栄養塩（季節+パルス、0..1にクリップ） ---
     nutrient_raw = seasonal_sine(step, total_steps, nutrient_mean, nutrient_amp, nutrient_phase)
+    if nutrient_pulse_period > 0:
+        if (step % nutrient_pulse_period) < max(nutrient_pulse_width, 1):
+            nutrient_raw += nutrient_pulse_amp
     nutrient = clip01(nutrient_raw)
 
     return {
@@ -193,75 +199,3 @@ def get_light_efficiency(depth_m: float, step: int, total_steps: int, kd_m_inv: 
     base = math.exp(-max(depth_m, 0.0) / 10.0)  # 旧ロジック
     seasonal = 0.5 + 0.5 * np.sin(2 * np.pi * step / float(max(total_steps, 1)))
     return clip01(base * seasonal)
-import math
-import numpy as np
-
-
-def get_environmental_factors(x, y, step, total_steps=150, width=100, height=100):
-    temp = 20 + 10 * np.sin(2 * np.pi * step / total_steps)
-    day_night_factor = 0.8 + 0.2 * math.sin(2 * math.pi * step / 100)
-    day_frac = (step % (total_steps // 10)) / (total_steps // 10)
-    light_surface = 1.0 if day_frac < 0.6 else 0.2
-    depth_norm = y / (height - 1)
-    base_light_intensity = light_surface * np.exp(-3 * depth_norm)
-    light = base_light_intensity * day_night_factor
-    salinity = 15 + (35 - 15) * (x / (width - 1))
-    nutrient = 1.0
-    return {
-        "temperature": temp,
-        "light": light,
-        "salinity": salinity,
-        "nutrient": nutrient,
-        "base_light_intensity": base_light_intensity,
-        "day_night_factor": day_night_factor,
-    }
-
-
-def compute_efficiency_score(plant, env, bottom_type=None):
-    temp_sigma = 5.0
-    temp_eff = math.exp(-0.5 * ((env["temperature"] - plant.opt_temp) / temp_sigma) ** 2)
-    light_eff = min(env["light"] / plant.light_tolerance, 1.0)
-    sal_min, sal_max = plant.salinity_range
-    if sal_min <= env["salinity"] <= sal_max:
-        sal_eff = 1.0
-    else:
-        if env["salinity"] < sal_min:
-            sal_eff = max(0, 1 - (sal_min - env["salinity"]) / 10)
-        else:
-            sal_eff = max(0, 1 - (env["salinity"] - sal_max) / 10)
-    nutrient_eff = env.get("nutrient", 1.0)
-    salt_tolerance_value = getattr(plant, "salt_tolerance", None)
-    if salt_tolerance_value is None:
-        salt_tolerance_value = (plant.salinity_range[0] + plant.salinity_range[1]) / 2
-    salt_diff = abs(env["salinity"] - salt_tolerance_value)
-    salt_penalty = max(0, 1 - 0.05 * salt_diff)
-    fixation_factor = 1.0
-    if bottom_type is not None:
-        if bottom_type == "mud":
-            fixation_factor = 1.0
-        elif bottom_type == "sand":
-            fixation_factor = 0.7
-        elif bottom_type == "rock":
-            fixation_factor = 0.85
-        else:
-            fixation_factor = 0.5
-    score = temp_eff * light_eff * sal_eff * nutrient_eff * salt_penalty * fixation_factor
-    return max(0.0, min(1.0, score))
-
-
-def get_nutrient_factor(step, total_steps):
-    return 0.6 + 0.6 * np.sin(2 * np.pi * step / total_steps)
-
-
-def get_light_level(step, total_steps):
-    return 1.0 if step < total_steps * 0.5 else 0.3
-
-
-def get_temperature(step, total_steps):
-    return 15 + (step / total_steps) * 20
-
-
-def get_light_efficiency(depth, step, total_steps):
-    base_efficiency = np.exp(-depth / 10)
-    seasonal_variation = 0.5 + 0.5 * np.sin(2 * np.pi * step / total_steps)
-    return base_efficiency * seasonal_variation

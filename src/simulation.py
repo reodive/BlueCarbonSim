@@ -5,12 +5,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-<<<<<<< HEAD
-
 from models.particle import initialize_particles
-=======
-from models.particle import Particle, initialize_particles
->>>>>>> 9e0959a (ver mac)
 from models.plant import Plant
 from environment import get_environmental_factors, compute_efficiency_score
 from terrain import create_terrain
@@ -40,47 +35,44 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     # 地形と深度マップ
     terrain, depth_map = create_terrain(width, height)
 
-<<<<<<< HEAD
     # 出力用シリーズ
     env_series, nutrient_series = [], []
     internal_series, fixed_series, released_series, carbon_series = [], [], [], []
     zostera_fixed_series, kelp_fixed_series, chlorella_fixed_series = [], [], []
     zostera_growth_series, kelp_growth_series, chlorella_growth_series = [], [], []
     zostera_absorbed_series, kelp_absorbed_series, chlorella_absorbed_series = [], [], []
-
-    # 植物プロファイル読み込み
-=======
     os.makedirs("results", exist_ok=True)
 
->>>>>>> 9e0959a (ver mac)
-    with open("data/plants.json", "r") as f:
-        profiles = json.load(f)
-
+    # 配置（Kelp は rock 帯、Zostera は mud 帯、Chlorella は表層）
     plant_positions = {
-        "Seagrass": {"x": 20, "y": 95, "radius": 5},
-        "Kelp": {"x": 50, "y": 85, "radius": 7},
-        "Chlorella": {"x": 80, "y": 10, "radius": 3},
+        "Zostera marina": {"x": 20, "y": 95, "radius": 5},
+        "Macrocystis pyrifera": {"x": 85, "y": 85, "radius": 7},
+        "Chlorella vulgaris": {"x": 80, "y": 10, "radius": 3},
     }
 
+    # 対象種を3種に絞る（シリーズ整合のため）
+    target_species = ["Zostera marina", "Macrocystis pyrifera", "Chlorella vulgaris"]
     plants = []
-    for plant_type, profile in profiles.items():
-        pos = plant_positions.get(plant_type, {"x": 50, "y": 95, "radius": 3})
-        plants.append(
-            Plant(
-                name=plant_type,
-                fixation_ratio=profile.get("fixation_ratio", 0.7),
-                release_ratio=profile.get("release_ratio", 0.05),
-                structure_density=profile.get("structure_density", 1.0),
-                opt_temp=profile.get("opt_temp", 20),
-                light_tolerance=profile.get("light_tolerance", 1.0),
-                salinity_range=tuple(profile.get("salinity_range", (20, 35))),
-                absorption_efficiency=profile.get("absorption_efficiency", 1.0),
-                growth_rate=profile.get("growth_rate", 1.0),
-                x=pos["x"],
-                y=pos["y"],
-                radius=pos["radius"],
-            )
+    for plant_type in target_species:
+        profile = profiles.get(plant_type, {})
+        pos = plant_positions[plant_type]
+        p = Plant(
+            name=plant_type,
+            fixation_ratio=profile.get("fixation_ratio", 0.7),
+            release_ratio=profile.get("release_ratio", 0.05),
+            structure_density=profile.get("structure_density", 1.0),
+            opt_temp=profile.get("opt_temp", 20),
+            light_tolerance=profile.get("light_tolerance", 1.0),
+            salinity_range=tuple(profile.get("salinity_range", (20, 35))),
+            absorption_efficiency=profile.get("absorption_efficiency", 1.0),
+            growth_rate=profile.get("growth_rate", 1.0),
+            x=pos["x"],
+            y=pos["y"],
+            radius=pos["radius"],
         )
+        # depth range を属性として付与
+        setattr(p, "model_depth_range", tuple(profile.get("model_depth_range", (1, 6))))
+        plants.append(p)
 
     # 初期粒子
     particles = initialize_particles(num_particles, terrain)
@@ -101,6 +93,19 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     random.seed(42)
 
     # ===== メインループ =====
+    # 物理尺度（environment と整合）
+    KD = 0.8
+    MAX_DEPTH_M = 8.0
+    meters_per_pixel = MAX_DEPTH_M / max((height - 1), 1)
+    # フォトゾーン近似（e^-kd z = 0.1 → z ≈ 2.3/kd）
+    euphotic_depth_m = 2.3 / max(KD, 1e-6)
+    euphotic_px = int(euphotic_depth_m / meters_per_pixel)
+
+    # 質量バランス用
+    mass_initial = float(len([] if particles is None else []))  # set later after init
+    mass_inflow = 0.0
+    mass_outflow = 0.0
+    mass_initial = float(num_particles)
     for step in range(total_steps):
 
         # ステップごとに環境評価をキャッシュ
@@ -109,7 +114,8 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
             env = get_environmental_factors(
                 plant.x, plant.y, step,
                 total_steps=total_steps, width=width, height=height,
-                salinity_mode="estuary"  # 汽水域にしたいときだけ
+                salinity_mode="linear_x",  # 汽水域: 左低塩→右高塩
+                kd_m_inv=KD, max_depth_m=MAX_DEPTH_M,
             )
             px, py = int(plant.x), int(plant.y)
             bottom_type = bottom_type_map[py, px] if (0 <= py < height and 0 <= px < width) else "mud"
@@ -134,34 +140,69 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
         kelp_absorbed_series.append(plants[1].total_absorbed)
         chlorella_absorbed_series.append(plants[2].total_absorbed)
 
-        # 粒子拡散
+        # 粒子拡散（開境界で流出をカウント）
         flow_field = generate_dynamic_flow_field(width, height, step)
-        particles = diffuse_particles(particles, terrain, flow_field)
+        particles, outflow_mass_step = diffuse_particles(particles, terrain, flow_field)
+        mass_outflow += float(outflow_mass_step)
 
         # 吸収処理（保存則を守る）
         remaining_particles = []
+        absorbed_total = 0.0
         for particle in particles:
-            if particle.y > height - 5:
-                for plant in plants:
-                    env = plant_env[plant.name]
-                    eff = plant_eff[plant.name]
-                    uptake_ratio = eff * getattr(plant, "absorption_efficiency", 1.0)
-                    uptake_ratio = min(max(uptake_ratio, 0.0), 1.0)
-                    if uptake_ratio > 0:
-                        absorb_amount = particle.mass * uptake_ratio
-                        plant.absorb(absorb_amount, efficiency_score=eff)
-                        particle.mass -= absorb_amount
-                        if particle.mass <= 1e-12:
-                            break
-                if particle.mass > 1e-12:
-                    remaining_particles.append(particle)
-            else:
+            absorbed_here = False
+            for plant in plants:
+                env = plant_env[plant.name]
+                eff = plant_eff[plant.name]
+                if eff <= 0.0:
+                    continue
+                # 種別別の吸収ゾーン
+                name = plant.name
+                # 横方向の近接（根系/群落の空間範囲）
+                dx = particle.x - plant.x
+                dy = particle.y - plant.y
+                r2 = dx * dx + dy * dy
+                within_radius = r2 <= (plant.radius ** 2)
+
+                allowed = False
+                if name in ("Chlorella vulgaris",):
+                    # プランクトン: フォトゾーン（上層）で吸収可能
+                    allowed = (particle.y <= euphotic_px)
+                elif name in ("Macrocystis pyrifera", "Saccharina japonica"):
+                    # ケルプ: 群落周囲 + 表層キャノピー
+                    kelp_band_m = 4.0
+                    surface_band_m = 1.5
+                    kelp_band_px = kelp_band_m / meters_per_pixel
+                    surface_band_px = surface_band_m / meters_per_pixel
+                    within_band = abs(dy) <= kelp_band_px and within_radius
+                    near_surface = particle.y <= surface_band_px
+                    allowed = within_band or near_surface
+                else:
+                    # 海草: 群落の周囲の浅場のみ
+                    sg_band_m = 2.0
+                    sg_band_px = sg_band_m / meters_per_pixel
+                    allowed = within_radius and (abs(dy) <= sg_band_px)
+
+                if not allowed:
+                    continue
+
+                uptake_ratio = eff * getattr(plant, "absorption_efficiency", 1.0)
+                uptake_ratio = min(max(uptake_ratio, 0.0), 1.0)
+                if uptake_ratio > 0 and particle.mass > 0:
+                    absorb_amount = particle.mass * uptake_ratio
+                    plant.absorb(absorb_amount, efficiency_score=eff)
+                    particle.mass -= absorb_amount
+                    absorbed_total += absorb_amount
+                    absorbed_here = True
+                    if particle.mass <= 1e-12:
+                        break
+            if particle.mass > 1e-12:
                 remaining_particles.append(particle)
         particles = np.array(remaining_particles, dtype=object)
 
         # 新規流入
         num_new = seasonal_inflow(step, total_steps, base=30)
         particles = inject_particles(particles, terrain, num_new_particles=num_new)
+        mass_inflow += float(num_new)  # 1.0 質量/粒子仮定
 
         # 可視化（任意）
         if step % 10 == 0:
@@ -199,15 +240,18 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     for species, total in species_fixed_totals.items():
         print(f"{species}: {total:.2f}")
 
+    # 質量収支チェック
+    current_particle_mass = float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0
+    plant_absorbed = float(sum(p.total_absorbed for p in plants))
+    expected_total = mass_initial + mass_inflow - mass_outflow
+    accounted = current_particle_mass + plant_absorbed
+    balance_error = 0.0 if expected_total <= 1e-9 else abs(accounted - expected_total) / expected_total
+    print(f"Mass balance error: {balance_error*100:.2f}% (<=2% target)")
+
     # 結果CSV保存
     os.makedirs("results", exist_ok=True)
     for plant in plants:
-<<<<<<< HEAD
         with open(os.path.join("results", f"result_{plant.name}.csv"), "w", newline="") as f:
-=======
-        total_absorbed = plant.total_absorbed
-        with open(f"results/result_{plant.name}.csv", "w", newline="") as f:
->>>>>>> 9e0959a (ver mac)
             writer = csv.writer(f)
             writer.writerow(["total_absorbed", "total_fixed", "total_growth"])
             writer.writerow([plant.total_absorbed, plant.total_fixed, plant.total_growth])

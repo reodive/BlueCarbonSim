@@ -33,18 +33,10 @@ class Plant:
         self.total_growth = 0
 
     def absorb(self, base_absorption, efficiency_score=1.0):
-<<<<<<< HEAD
         absorbed = self.absorption_efficiency * base_absorption * efficiency_score
         self.total_absorbed += absorbed
         fixed = absorbed * self.fixation_ratio
         self.total_fixed += fixed
         growth = absorbed * self.growth_rate
-=======
-        absorbed = self. absorption_efficiency * base_absorption * efficiency_score
-        self.total_absorbed += absorbed
-        fixed = absorbed * self.fixation_ratio
-        self.total_fixed += fixed
-        growth = absorbed * self.growth_late
->>>>>>> d5e1edf9b0834d1d1bebde9ab26b8f3fac664fe4
         self.total_growth += growth
         return absorbed, fixed, growth
