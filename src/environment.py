@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # src/environment.py
 # ------------------
 # 現実寄りの環境モデル（季節/日内の分離、Beer–Lambert、0..1正規化）
@@ -194,7 +193,6 @@ def get_light_efficiency(depth_m: float, step: int, total_steps: int, kd_m_inv: 
     base = math.exp(-max(depth_m, 0.0) / 10.0)  # 旧ロジック
     seasonal = 0.5 + 0.5 * np.sin(2 * np.pi * step / float(max(total_steps, 1)))
     return clip01(base * seasonal)
-=======
 import math
 import numpy as np
 
@@ -267,4 +265,3 @@ def get_light_efficiency(depth, step, total_steps):
     base_efficiency = np.exp(-depth / 10)
     seasonal_variation = 0.5 + 0.5 * np.sin(2 * np.pi * step / total_steps)
     return base_efficiency * seasonal_variation
->>>>>>> 9e0959a (ver mac)
