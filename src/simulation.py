@@ -10,6 +10,7 @@ from models.plant import Plant
 from environment import get_environmental_factors, compute_efficiency_score
 from terrain import create_terrain
 from particle_flow import diffuse_particles, inject_particles, generate_dynamic_flow_field
+from utils.config import load_config
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
@@ -20,10 +21,12 @@ def apply_depth_filter(eff: float, plant, env) -> float:
     depth_m = float(env.get("depth_m", 0.0))
     return 0.0 if not (dmin <= depth_m <= dmax) else eff
 
-def seasonal_inflow(step, total_steps, base=30):
-    """季節性のCO₂流入量（正弦波変動）"""
+def seasonal_inflow(step, total_steps, base_mgC_per_step=30.0, particle_mass_mgC=1.0):
+    """季節性のCO₂流入（mgC/step）を粒子数に変換して返す"""
     cycle = 2 * np.pi * step / total_steps
-    return int(base * (0.5 + 0.5 * np.sin(cycle)))
+    mgc = base_mgC_per_step * (0.5 + 0.5 * np.sin(cycle))
+    count = int(round(mgc / max(particle_mass_mgC, 1e-9)))
+    return max(count, 0)
 
 from utils.profile_adapter import normalize_profiles
 with open("data/plants.json") as f:
@@ -42,6 +45,12 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     zostera_growth_series, kelp_growth_series, chlorella_growth_series = [], [], []
     zostera_absorbed_series, kelp_absorbed_series, chlorella_absorbed_series = [], [], []
     os.makedirs("results", exist_ok=True)
+
+    # 設定読み込み（単位等）
+    cfg = load_config()
+    particle_mass_mgC = float(cfg.get("particle_mass_mgC", 1.0))
+    inflow_mgC_per_step_base = float(cfg.get("inflow_mgC_per_step_base", 30.0))
+    chl_mortality = float(cfg.get("chl_mortality_rate", 0.02))  # 2%/step
 
     # 配置（Kelp は rock 帯、Zostera は mud 帯、Chlorella は表層）
     plant_positions = {
@@ -189,7 +198,7 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
                 uptake_ratio = min(max(uptake_ratio, 0.0), 1.0)
                 if uptake_ratio > 0 and particle.mass > 0:
                     absorb_amount = particle.mass * uptake_ratio
-                    plant.absorb(absorb_amount, efficiency_score=eff)
+                    plant.absorb(absorb_amount)
                     particle.mass -= absorb_amount
                     absorbed_total += absorb_amount
                     absorbed_here = True
@@ -200,9 +209,21 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
         particles = np.array(remaining_particles, dtype=object)
 
         # 新規流入
-        num_new = seasonal_inflow(step, total_steps, base=30)
+        num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
         particles = inject_particles(particles, terrain, num_new_particles=num_new)
         mass_inflow += float(num_new)  # 1.0 質量/粒子仮定
+
+        # プランクトン（Chlorella）の自然死亡・再放出（CO2復帰）
+        for plant in plants:
+            if plant.name == "Chlorella vulgaris" and plant.total_growth > 0:
+                mortal = plant.total_growth * chl_mortality
+                if mortal > 0:
+                    plant.total_growth -= mortal
+                    # mgC を粒子数に変換して、その場に再注入
+                    n_rel = int(round(mortal / max(particle_mass_mgC, 1e-9)))
+                    if n_rel > 0:
+                        particles = inject_particles(particles, terrain, num_new_particles=n_rel, sources=[(plant.x, plant.y)])
+                        mass_outflow += 0.0  # 再注入なので流出ではない
 
         # 可視化（任意）
         if step % 10 == 0:

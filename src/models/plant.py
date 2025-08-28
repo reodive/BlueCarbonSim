@@ -32,8 +32,12 @@ class Plant:
         self.total_fixed = 0
         self.total_growth = 0
 
-    def absorb(self, base_absorption, efficiency_score=1.0):
-        absorbed = self.absorption_efficiency * base_absorption * efficiency_score
+    def absorb(self, absorbed_mass):
+        """
+        引数は既に「水から取り去られた吸収量（mgC単位の質量）」と解釈する。
+        ここでは二重に効率を掛けない（質量保存のため）。
+        """
+        absorbed = float(absorbed_mass)
         self.total_absorbed += absorbed
         fixed = absorbed * self.fixation_ratio
         self.total_fixed += fixed

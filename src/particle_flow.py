@@ -3,15 +3,27 @@ import numpy as np
 from models.particle import Particle
 
 
-def diffuse_particles(particles, terrain, flow_field):
+def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
     """
     粒子の拡散・移流（簡易）と開境界の処理。
     - 左端: 河川側（主に入流想定）
     - 右端: 外洋側（外向き速度で到達時に流出として削除）
-    上下端も外向き到達時は削除。
+    - 上下端: 外向き到達で削除（海面・海底の弱開境界）
+    数値安定化: フィールドの最大流速に基づきΔtを自動縮小（CFL近似）。
     戻り値: (更新後粒子配列, 流出した総質量)
     """
     height, width = terrain.shape
+
+    # Δtの自動調整（セル幅=1とみなす）
+    u = flow_field[:, :, 0]
+    v = flow_field[:, :, 1]
+    max_speed = float(np.max(np.sqrt(u * u + v * v))) if flow_field.size > 0 else 0.0
+    eps = 1e-6
+    if max_speed < eps:
+        dt = 1.0
+    else:
+        dt = min(1.0, cfl / max_speed)
+
     new_particles = []
     outflow_mass = 0.0
     for particle in particles:
@@ -21,8 +33,11 @@ def diffuse_particles(particles, terrain, flow_field):
             flow_x, flow_y = flow_field[iy, ix]
         else:
             flow_x, flow_y = 0.0, 0.0
-        dx = np.random.normal(flow_x, 0.5)
-        dy = np.random.normal(flow_y, 0.5)
+
+        # 速度×dt と乱流拡散（分散はdtに比例）
+        dx = np.random.normal(flow_x * dt, 0.5 * np.sqrt(dt))
+        dy = np.random.normal(flow_y * dt, 0.5 * np.sqrt(dt))
+
         trial_x = x + dx
         trial_y = y + dy
         new_x = float(np.clip(trial_x, 0, width - 1))

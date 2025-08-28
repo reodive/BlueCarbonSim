@@ -1,0 +1,11 @@
+# 単位・境界に関する基本設定
+
+# 粒子1個あたりの炭素質量 [mgC]
+particle_mass_mgC: 1.0
+
+# 季節性CO2流入の基準 [mgC/step]
+inflow_mgC_per_step_base: 30.0
+
+# Chlorella（プランクトン）の自然死亡率 [/step]
+chl_mortality_rate: 0.02
+
