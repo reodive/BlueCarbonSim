@@ -3,14 +3,14 @@ import csv
 import json
 import random
 import numpy as np
-import matplotlib.pyplot as plt
 import os
-from models.particle import initialize_particles
-from models.plant import Plant
-from environment import get_environmental_factors, compute_efficiency_score
-from terrain import create_terrain
-from particle_flow import diffuse_particles, inject_particles, generate_dynamic_flow_field
-from utils.config import load_config
+
+from src.utils.environment import get_environmental_factors, compute_efficiency_score
+from src.terrain import create_terrain
+from src.particle_flow import diffuse_particles, inject_particles, generate_dynamic_flow_field
+from src.utils.config import load_config
+from src.models.particle import initialize_particles
+from src.models.plant import Plant
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
