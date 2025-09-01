@@ -9,3 +9,5 @@ inflow_mgC_per_step_base: 30.0
 # Chlorella（プランクトン）の自然死亡率 [/step]
 chl_mortality_rate: 0.02
 
+# 光学減衰係数 kd [m^-1]（小さいほど深場まで光が届く）
+kd_m_inv: 0.6

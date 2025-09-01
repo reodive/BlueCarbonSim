@@ -1,6 +1,5 @@
 import numpy as np
-
-from models.particle import Particle
+from .models.particle import Particle
 
 
 def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
@@ -28,7 +27,7 @@ def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
     outflow_mass = 0.0
     for particle in particles:
         x, y = particle.x, particle.y
-        ix, iy = int(y), int(x)
+        ix, iy = int(x), int(y)
         if 0 <= iy < flow_field.shape[0] and 0 <= ix < flow_field.shape[1]:
             flow_x, flow_y = flow_field[iy, ix]
         else:
@@ -78,18 +77,21 @@ def inject_particles(particles, terrain, num_new_particles=20, sources=None):
         sources = [(0, 50), (99, 20)]
     n_sources = len(sources)
     base, remainder = divmod(num_new_particles, n_sources)
+    actually_added = 0
     for i, (sx, sy) in enumerate(sources):
         count = base + (1 if i < remainder else 0)
         for _ in range(count):
             x = sx + np.random.normal(scale=1.0)
             y = sy + np.random.normal(scale=1.0)
-            if 0 <= int(y) < height and 0 <= int(x) < width:
+            # 厳密に境界内かを x, y の実数値で判定
+            if 0.0 <= x < (width) and 0.0 <= y < (height):
                 if terrain[int(y), int(x)] == 1:
                     new_particles.append(Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0))
+                    actually_added += 1
     if isinstance(particles, list):
         particles.extend(new_particles)
-        return particles
+        return particles, actually_added
     elif len(new_particles) > 0:
-        return np.concatenate((particles, new_particles))
+        return np.concatenate((particles, new_particles)), actually_added
     else:
-        return particles
+        return particles, 0

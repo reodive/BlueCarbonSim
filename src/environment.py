@@ -80,9 +80,13 @@ def get_environmental_factors(
     temperature = seasonal_sine(step, total_steps, T_mean, T_amp, T_phase)
 
     # --- 日内光（表層） ---
-    # 1日を total_steps/365 日あたりのstepに換算（Δt=1日運用なら簡略に step%1=0）
-    steps_per_day = max(total_steps / 365.0, 1.0)
-    hour_frac = (step % steps_per_day) / steps_per_day  # 0..1
+    # total_steps が 365 未満の場合でも日内変動が消えないように、
+    # 「このステップが何日目か」の小数部を使って時刻（0..1）を作る。
+    # 1ステップあたりの日数を連続値として扱い、
+    # 通年の小数日から時刻（0..1）を取得する。
+    days_per_step = 365.0 / max(total_steps, 1)
+    day_float = step * days_per_step
+    hour_frac = float(day_float % 1.0)  # 0..1
     I0_diurnal = diurnal_half_sine(hour_frac, I0_daylen_frac)  # 0..1
 
     # --- 深度決定 & 減衰 ---

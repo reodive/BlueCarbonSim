@@ -4,13 +4,15 @@ import json
 import random
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 
-from src.utils.environment import get_environmental_factors, compute_efficiency_score
-from src.terrain import create_terrain
-from src.particle_flow import diffuse_particles, inject_particles, generate_dynamic_flow_field
-from src.utils.config import load_config
-from src.models.particle import initialize_particles
-from src.models.plant import Plant
+from .environment import get_environmental_factors, compute_efficiency_score
+from .terrain import create_terrain
+from .particle_flow import diffuse_particles, inject_particles, generate_dynamic_flow_field
+from .utils.config import load_config
+from .models.particle import initialize_particles
+from .models.plant import Plant
+from .utils.profile_adapter import normalize_profiles
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
@@ -27,8 +29,6 @@ def seasonal_inflow(step, total_steps, base_mgC_per_step=30.0, particle_mass_mgC
     mgc = base_mgC_per_step * (0.5 + 0.5 * np.sin(cycle))
     count = int(round(mgc / max(particle_mass_mgC, 1e-9)))
     return max(count, 0)
-
-from utils.profile_adapter import normalize_profiles
 with open("data/plants.json") as f:
     profiles_raw = json.load(f)
 profiles = normalize_profiles(profiles_raw)
@@ -52,15 +52,31 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     inflow_mgC_per_step_base = float(cfg.get("inflow_mgC_per_step_base", 30.0))
     chl_mortality = float(cfg.get("chl_mortality_rate", 0.02))  # 2%/step
 
-    # 配置（Kelp は rock 帯、Zostera は mud 帯、Chlorella は表層）
+    # 配置（9種の植物のレイアウト）
     plant_positions = {
-        "Zostera marina": {"x": 20, "y": 95, "radius": 5},
-        "Macrocystis pyrifera": {"x": 85, "y": 85, "radius": 7},
-        "Chlorella vulgaris": {"x": 80, "y": 10, "radius": 3},
+        "Zostera marina":            {"x": 18, "y": 72, "radius": 5},
+        "Halophila ovalis":          {"x": 25, "y": 68, "radius": 5},
+        "Posidonia oceanica":        {"x": 60, "y": 78, "radius": 6},
+        "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 7},
+        "Saccharina japonica":       {"x": 75, "y": 82, "radius": 7},
+        "Chlorella vulgaris":        {"x": 10, "y": 14, "radius": 3},
+        "Nannochloropsis gaditana":  {"x": 55, "y": 16, "radius": 3},
+        "Spartina alterniflora":     {"x": 12, "y": 95, "radius": 4},
+        "Rhizophora spp.":           {"x": 15, "y": 92, "radius": 4},
     }
 
-    # 対象種を3種に絞る（シリーズ整合のため）
-    target_species = ["Zostera marina", "Macrocystis pyrifera", "Chlorella vulgaris"]
+    # 対象種を9種に拡張
+    target_species = [
+        "Zostera marina",
+        "Halophila ovalis",
+        "Posidonia oceanica",
+        "Macrocystis pyrifera",
+        "Saccharina japonica",
+        "Chlorella vulgaris",
+        "Nannochloropsis gaditana",
+        "Spartina alterniflora",
+        "Rhizophora spp."
+    ]
     plants = []
     for plant_type in target_species:
         profile = profiles.get(plant_type, {})
@@ -103,18 +119,18 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
 
     # ===== メインループ =====
     # 物理尺度（environment と整合）
-    KD = 0.8
+    KD = float(cfg.get("kd_m_inv", 0.8))
     MAX_DEPTH_M = 8.0
     meters_per_pixel = MAX_DEPTH_M / max((height - 1), 1)
     # フォトゾーン近似（e^-kd z = 0.1 → z ≈ 2.3/kd）
     euphotic_depth_m = 2.3 / max(KD, 1e-6)
     euphotic_px = int(euphotic_depth_m / meters_per_pixel)
 
-    # 質量バランス用
-    mass_initial = float(len([] if particles is None else []))  # set later after init
+    # 質量バランス用（mgC単位）
     mass_inflow = 0.0
     mass_outflow = 0.0
-    mass_initial = float(num_particles)
+    mass_initial = float(len(particles)) * float(particle_mass_mgC)
+    loss_quant_mgC = 0.0  # reinjection rounding loss (mgC)
     for step in range(total_steps):
 
         # ステップごとに環境評価をキャッシュ
@@ -124,6 +140,7 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
                 plant.x, plant.y, step,
                 total_steps=total_steps, width=width, height=height,
                 salinity_mode="linear_x",  # 汽水域: 左低塩→右高塩
+                S_min=0.0, S_max=35.0,      # 左端を低塩（淡水寄り）に設定
                 kd_m_inv=KD, max_depth_m=MAX_DEPTH_M,
             )
             px, py = int(plant.x), int(plant.y)
@@ -152,7 +169,7 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
         # 粒子拡散（開境界で流出をカウント）
         flow_field = generate_dynamic_flow_field(width, height, step)
         particles, outflow_mass_step = diffuse_particles(particles, terrain, flow_field)
-        mass_outflow += float(outflow_mass_step)
+        mass_outflow += float(outflow_mass_step) * float(particle_mass_mgC)
 
         # 吸収処理（保存則を守る）
         remaining_particles = []
@@ -210,8 +227,9 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
 
         # 新規流入
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
-        particles = inject_particles(particles, terrain, num_new_particles=num_new)
-        mass_inflow += float(num_new)  # 1.0 質量/粒子仮定
+        particles, added = inject_particles(particles, terrain, num_new_particles=num_new)
+        # 実際に追加できた粒子数で流入を加算（質量保存）
+        mass_inflow += float(added) * float(particle_mass_mgC)
 
         # プランクトン（Chlorella）の自然死亡・再放出（CO2復帰）
         for plant in plants:
@@ -221,9 +239,14 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
                     plant.total_growth -= mortal
                     # mgC を粒子数に変換して、その場に再注入
                     n_rel = int(round(mortal / max(particle_mass_mgC, 1e-9)))
+                    # 再注入の丸め誤差（mgC）を蓄積：正負どちらも取りうる
+                    loss_quant_mgC += float(mortal) - float(n_rel) * float(particle_mass_mgC)
                     if n_rel > 0:
-                        particles = inject_particles(particles, terrain, num_new_particles=n_rel, sources=[(plant.x, plant.y)])
-                        mass_outflow += 0.0  # 再注入なので流出ではない
+                        particles, added_rel = inject_particles(
+                            particles, terrain, num_new_particles=n_rel, sources=[(plant.x, plant.y)]
+                        )
+                        # 再注入（流入）として会計。丸め分は loss_quant_mgC に反映済み。
+                        mass_inflow += float(added_rel) * float(particle_mass_mgC)
 
         # 可視化（任意）
         if step % 10 == 0:
@@ -261,13 +284,23 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
     for species, total in species_fixed_totals.items():
         print(f"{species}: {total:.2f}")
 
-    # 質量収支チェック
-    current_particle_mass = float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0
-    plant_absorbed = float(sum(p.total_absorbed for p in plants))
-    expected_total = mass_initial + mass_inflow - mass_outflow
-    accounted = current_particle_mass + plant_absorbed
-    balance_error = 0.0 if expected_total <= 1e-9 else abs(accounted - expected_total) / expected_total
-    print(f"Mass balance error: {balance_error*100:.2f}% (<=2% target)")
+    # 質量収支チェック（初期＋流入＝残量＋流出）
+    current_particle_mass = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
+    plant_absorbed = float(sum(p.total_absorbed for p in plants)) * float(particle_mass_mgC)
+    plant_fixed = float(sum(p.total_fixed for p in plants)) * float(particle_mass_mgC)
+
+    total_injected = float(mass_initial + mass_inflow)
+    total_outflow = float(mass_outflow)
+    total_remaining = float(current_particle_mass + plant_absorbed + loss_quant_mgC)
+
+    # 収支誤差を算出して表示（mgC単位）
+    balance_error = 0.0 if total_injected <= 1e-9 else abs(total_injected - (total_remaining + total_outflow)) / total_injected
+    print(
+        f"Mass balance: Injected={total_injected:.2f} mgC, "
+        f"Absorbed={plant_absorbed:.2f} mgC, Fixed={plant_fixed:.2f} mgC, "
+        f"Outflow={total_outflow:.2f} mgC, Remaining={total_remaining:.2f} mgC, "
+        f"Quantization={loss_quant_mgC:.2f} mgC, Error={balance_error*100:.2f}%"
+    )
 
     # 結果CSV保存
     os.makedirs("results", exist_ok=True)
@@ -295,10 +328,15 @@ def run_simulation(total_steps: int = 150, num_particles: int = 1000, width: int
 def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.0):
     """
     単ステップ評価（主にテスト用）。
-    plants: dict形式の簡易パラメータセット
+    plants: dict（各種のパラメータ。JSONのキー名に合わせる）
+    co2: このステップで評価対象に与える炭素量（同一単位で）
     """
     results = {}
     nutrient_series = []
+
+    step_abs_total = 0.0   # このステップでの総吸収
+    step_fix_total = 0.0   # このステップでの総固定
+
     for plant_name, params in plants.items():
         x = params.get("x", 0)
         y = params.get("y", 0)
@@ -306,23 +344,32 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
 
         temp_sigma = 5.0
         temp_eff = np.exp(-0.5 * ((env["temperature"] - params.get("opt_temp", 20)) / temp_sigma) ** 2)
-        light_eff = min(env["light"] / params.get("light_tolerance", 1.0), 1.0)
+        light_eff = min(env["light"] / max(params.get("light_tolerance", 1.0), 1e-9), 1.0)
 
         sal_min, sal_max = params.get("salinity_range", (20, 35))
         salinity = env["salinity"]
         if sal_min <= salinity <= sal_max:
             sal_eff = 1.0
         elif salinity < sal_min:
-            sal_eff = max(0, 1 - (sal_min - salinity) / 10)
+            sal_eff = max(0.0, 1 - (sal_min - salinity) / 10)
         else:
-            sal_eff = max(0, 1 - (salinity - sal_max) / 10)
+            sal_eff = max(0.0, 1 - (salinity - sal_max) / 10)
 
-        efficiency = temp_eff * light_eff * sal_eff
-        absorbed = params.get("absorption_efficiency", 1.0) * co2 * efficiency
-        growth = params.get("growth_rate", 1.0) * absorbed
-        fixed = absorbed * params.get("fixation_ratio", 0.7)
+        efficiency = float(temp_eff) * float(light_eff) * float(sal_eff)
 
+        # JSONのキー名に合わせる
+        abs_rate = params.get("absorption_rate", params.get("absorption_efficiency", 1.0))
+        fix_rate = params.get("fixation_rate", params.get("fixation_ratio", 0.7))
+        growth_r = params.get("growth_rate", 0.0)
+
+        absorbed = abs_rate * co2 * efficiency
+        fixed = absorbed * fix_rate
+        growth = growth_r * absorbed
+
+        step_abs_total += absorbed
+        step_fix_total += fixed
         nutrient_series.append(env["nutrient"])
+
         results[plant_name] = {
             "absorbed": absorbed,
             "growth": growth,
@@ -331,4 +378,9 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
             "env": env,
         }
 
-    return results, nutrient_series
+    # このステップ分の合計も返す（収支集計用）
+    return results, nutrient_series, step_abs_total, step_fix_total
+
+if __name__ == "__main__":
+    # デフォルト設定で一度だけ走らせる
+    run_simulation()
