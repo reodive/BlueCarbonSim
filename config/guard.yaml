@@ -1,0 +1,8 @@
+# Guard configuration for geometry and numerical assertions
+# Values are intentionally conservative defaults.
+
+min_dist_px: 3
+gate_enabled: true
+vertical_gate_min_median_abs_dy_px: 0.8
+dominance_max_share: 0.65
+dominance_streak: 3

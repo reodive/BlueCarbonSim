@@ -4,7 +4,7 @@ import json
 import os
 import random
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,6 +20,139 @@ from .particle_flow import (
 from .terrain import create_terrain
 from .utils.config import load_config
 from .utils.profile_adapter import normalize_profiles
+from math import hypot
+
+# ===== Guards & Metrics Helpers =====
+def validate_geometry(
+    sources: List[Tuple[int, int]],
+    plants: List[Plant],
+    width: int,
+    height: int,
+    *,
+    margin_px: int = 3,
+    auto_shift: bool = True,
+    y_shift_candidates: Tuple[int, ...] = (-4, -2, -1, 1, 2, 4),
+) -> List[Tuple[int, int]]:
+    """Ensure injection sources are not within any plant radius+margin.
+    If too close, try auto y-shifts; otherwise raise ValueError.
+    Returns possibly adjusted list of sources (tuples).
+    """
+    adjusted = list(sources)
+    for i, (sx, sy) in enumerate(list(adjusted)):
+        def ok(x, y, p):
+            return hypot(x - p.x, y - p.y) > (p.radius + margin_px)
+        bad = any(not ok(sx, sy, p) for p in plants)
+        if not bad:
+            continue
+        if auto_shift:
+            shifted_ok = False
+            # First try a few small, human-chosen nudges
+            for dy in y_shift_candidates:
+                ny = int(max(0, min(sy + dy, height - 1)))
+                if all(ok(sx, ny, p) for p in plants):
+                    adjusted[i] = (sx, ny)
+                    shifted_ok = True
+                    break
+            # Fallback: expand search radius along y until safe or bounds reached
+            if not shifted_ok:
+                max_span = max(height, 1)
+                for dd in range(margin_px, max_span):
+                    for dy in (-dd, dd):
+                        ny = int(max(0, min(sy + dy, height - 1)))
+                        if all(ok(sx, ny, p) for p in plants):
+                            adjusted[i] = (sx, ny)
+                            shifted_ok = True
+                            break
+                    if shifted_ok:
+                        break
+            # As a last resort, try x-direction shifts too
+            if not shifted_ok:
+                max_span_x = max(width, 1)
+                for dd in range(margin_px, max_span_x):
+                    for dx in (-dd, dd):
+                        nx = int(max(0, min(sx + dx, width - 1)))
+                        if all(ok(nx, sy, p) for p in plants):
+                            adjusted[i] = (nx, sy)
+                            shifted_ok = True
+                            break
+                    if shifted_ok:
+                        break
+            if not shifted_ok:
+                raise ValueError(f"Injection source {i} too close to vegetation; auto-shift failed")
+        else:
+            raise ValueError(f"Injection source {i} too close to vegetation")
+    return adjusted
+
+
+def assert_gate_effective(abs_dy_samples: List[float], min_median: float = 0.8):
+    if len(abs_dy_samples) == 0:
+        return
+    if np.median(np.asarray(abs_dy_samples)) < float(min_median):
+        raise AssertionError("Vertical gate ineffective: median |dy| too small")
+
+
+_dom_state = {}
+
+def guard_dominance(species_share: Dict[str, float], max_share: float = 0.65, streak: int = 3):
+    """Fail if any species exceeds max_share for 'streak' consecutive checks (per-name state)."""
+    if not species_share:
+        return
+    top, val = max(species_share.items(), key=lambda kv: kv[1])
+    k = f"dom_{top}"
+    _dom_state[k] = 1 + _dom_state.get(k, 0) if val > max_share else 0
+    if _dom_state[k] >= streak:
+        raise AssertionError(f"Dominance: {top} {val:.2%} > {max_share:.0%} for {streak} runs")
+
+
+def save_pref1_snapshot(grid_shape, plants, sources, particles0, outdir="outputs"):
+    os.makedirs(outdir, exist_ok=True)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        h, w = grid_shape
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.set_xlim(0, w)
+        ax.set_ylim(0, h)
+        ax.invert_yaxis()
+        ax.set_facecolor("#eef7ff")
+        for p in plants:
+            circ = plt.Circle((p.x, p.y), p.radius, edgecolor="green", facecolor="none", lw=1.5)
+            ax.add_patch(circ)
+            ax.plot([p.x], [p.y], marker="o", color="green", ms=3)
+        for sx, sy in sources:
+            ax.plot([sx], [sy], marker="x", color="red", ms=6)
+        if particles0 is not None and len(particles0) > 0:
+            ax.scatter([p.x for p in particles0], [p.y for p in particles0], c="#00bcd4", s=5, alpha=0.7)
+        ax.set_title("Pref1 snapshot")
+        plt.tight_layout()
+        fig.savefig(os.path.join(outdir, "debug_pref1.png"))
+        plt.close(fig)
+
+        if particles0 is not None and len(particles0) > 0 and len(plants) > 0:
+            dists = []
+            dys = []
+            for p in particles0:
+                dmin = min(hypot(p.x - q.x, p.y - q.y) for q in plants)
+                dists.append(dmin)
+                dys.append(min(abs(p.y - q.y) for q in plants))
+            # separate hist files for CI
+            fig1, ax1 = plt.subplots(figsize=(4, 3))
+            ax1.hist(dys, bins=20, color="#795548"); ax1.set_title("|dy| at injection")
+            plt.tight_layout(); fig1.savefig(os.path.join(outdir, "dy_hist.png")); plt.close(fig1)
+
+            fig2, ax2 = plt.subplots(figsize=(4, 3))
+            ax2.hist(dists, bins=20, color="#607d8b"); ax2.set_title("dist to nearest plant")
+            plt.tight_layout(); fig2.savefig(os.path.join(outdir, "dist_hist.png")); plt.close(fig2)
+    except Exception as e:
+        print(f"[warn] Pref1 snapshot failed: {e}")
+
+
+def guard_sensitivity(baseline: Dict[str, float], alt: Dict[str, float], eps: float = 1e-6):
+    """Fail if totals are indistinguishable under a perturbation (gate not effective)."""
+    keys = set(baseline.keys()) & set(alt.keys())
+    if all(abs(float(baseline[k]) - float(alt[k])) < eps for k in keys):
+        raise AssertionError("Sensitivity guard: no change detected after gate width perturbation")
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
@@ -55,6 +188,10 @@ def run_simulation(
     num_particles: int = 1000,
     width: int = 100,
     height: int = 100,
+    *,
+    guard_config_path: str = "config/guard.yaml",
+    schema_path: str = "config/schema.json",
+    pref1: bool = False,
 ):
     """シミュレーションを実行し、各種シリーズと結果を返す"""
 
@@ -90,6 +227,8 @@ def run_simulation(
     chl_mortality = float(cfg.get("chl_mortality_rate", 0.02))  # 2%/step
     live_plot_interval = int(cfg.get("live_plot_interval", 0))   # 0ならライブ描画なし
     show_plots = bool(cfg.get("show_plots", False))              # Trueでplt.show
+    debug_mass_check = bool(cfg.get("debug_mass_check", False))  # 毎ステップの質量保存チェック
+    flow_scale = float(cfg.get("flow_scale", 1.0))               # 流速スケール（感度確認用）
     # 潮間帯の稼働率（Spartina/Rhizophora の水没時間をモデル化）
     tidal_period_steps = int(cfg.get("tidal_period_steps", 24))
     intertidal_submergence_fraction = float(cfg.get("intertidal_submergence_fraction", 0.35))
@@ -119,6 +258,27 @@ def run_simulation(
         (width - 2, int(height * 0.30)),  # 右・中浅（Posidonia/ケルプ中層）
         (width - 2, int(height * 0.80)),  # 右・深め（ケルプ根本）
     ]
+
+    # ===== Guard config & schema (lightweight validation) =====
+    guard_cfg = load_config(guard_config_path) if os.path.exists(guard_config_path) else {}
+    min_dist_px = int(guard_cfg.get("min_dist_px", 3))
+    gate_enabled = bool(guard_cfg.get("gate_enabled", False))
+    min_median_abs_dy = float(guard_cfg.get("vertical_gate_min_median_abs_dy_px", 0.8))
+    dom_max_share = float(guard_cfg.get("dominance_max_share", 0.65))
+    dom_streak = int(guard_cfg.get("dominance_streak", 3))
+
+    if os.path.exists(schema_path):
+        try:
+            with open(schema_path, "r", encoding="utf-8") as f:
+                schema = json.load(f)
+            if "min_dist_px" in schema:
+                if min_dist_px < int(schema["min_dist_px"].get("min", 0)):
+                    raise ValueError("min_dist_px below schema minimum")
+            if "vertical_gate_min_median_abs_dy_px" in schema:
+                if min_median_abs_dy < float(schema["vertical_gate_min_median_abs_dy_px"].get("min", 0.0)):
+                    raise ValueError("vertical_gate_min_median_abs_dy_px below schema minimum")
+        except Exception as e:
+            raise ValueError(f"Guard schema validation failed: {e}")
 
     # 対象種を9種に拡張
     target_species = [
@@ -173,6 +333,26 @@ def run_simulation(
     np.random.seed(42)
     random.seed(42)
 
+    # Geometry guard: adjust or abort if any source collides with plant footprints
+    injection_sources = validate_geometry(injection_sources, plants, width, height, margin_px=min_dist_px)
+
+    # Pref1: one-step visualization and exit (no main loop)
+    if pref1:
+        try:
+            from .models.particle import Particle
+        except Exception:
+            Particle = None
+        p0 = []
+        if Particle is not None:
+            for sx, sy in injection_sources:
+                for _ in range(50):
+                    x = sx + np.random.normal(scale=1.0)
+                    y = sy + np.random.normal(scale=1.0)
+                    if 0 <= x < width and 0 <= y < height and terrain[int(y), int(x)] == 1:
+                        p0.append(Particle(x=x, y=y, mass=1.0, origin="pref1", x0=x, y0=y))
+        save_pref1_snapshot((height, width), plants, injection_sources, p0, outdir="outputs")
+        return (), (), (), (), (), [], [], [], [], [], []
+
     # ===== メインループ =====
     # 物理尺度（environment と整合）
     KD = float(cfg.get("kd_m_inv", 0.8))
@@ -197,7 +377,17 @@ def run_simulation(
         for name in target_species
     }
 
+    # Metrics accumulators
+    source_labels = [f"src{i}" for i in range(len(injection_sources))]
+    capture_matrix: Dict[str, Dict[str, float]] = {lab: {name: 0.0 for name in target_species} for lab in source_labels + ["init"]}
+    abs_dy_samples: List[float] = []
+    travel_weighted_sum = 0.0
+    travel_weight = 0.0
+
     for step in range(total_steps):
+        # 質量（mgC）スナップショット（ステップ前）
+        prev_particles_mass_mgC = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
+        prev_loss_quant_mgC = float(loss_quant_mgC)
 
         # ステップごとに環境評価をキャッシュ
         plant_env, plant_eff = {}, {}
@@ -235,9 +425,10 @@ def run_simulation(
         chlorella_absorbed_series.append(plants[5].total_absorbed)
 
         # 粒子拡散（開境界で流出をカウント）
-        flow_field = generate_dynamic_flow_field(width, height, step)
+        flow_field = generate_dynamic_flow_field(width, height, step, scale=flow_scale)
         particles, outflow_mass_step = diffuse_particles(particles, terrain, flow_field)
-        mass_outflow += float(outflow_mass_step) * float(particle_mass_mgC)
+        outflow_mgC_step = float(outflow_mass_step) * float(particle_mass_mgC)
+        mass_outflow += outflow_mgC_step
 
         # 吸収処理（保存則を守る・競合按分）
         remaining_particles = []
@@ -322,6 +513,19 @@ def run_simulation(
                 step_absorbed += absorbed
                 step_fixed += fixed
                 step_growth += growth
+                # Metrics: capture by origin and travel distance
+                origin = getattr(particle, "origin", None) or "init"
+                if origin not in capture_matrix:
+                    capture_matrix[origin] = {name: 0.0 for name in target_species}
+                capture_matrix[origin][plant.name] = capture_matrix[origin].get(plant.name, 0.0) + float(absorbed)
+                try:
+                    dx0 = float(particle.x) - float(particle.x0)
+                    dy0 = float(particle.y) - float(particle.y0)
+                    travel = float(np.hypot(dx0, dy0))
+                    travel_weighted_sum += float(absorbed) * travel
+                    travel_weight += float(absorbed)
+                except Exception:
+                    pass
 
             particle.mass -= take_total
             if particle.mass > 1e-12:
@@ -329,15 +533,41 @@ def run_simulation(
 
         particles = np.array(remaining_particles, dtype=object)
 
-        # 新規流入
+        # 新規流入（等分配）: 起源ラベル付きで注入し、縦ゲートの有効性も計測
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
-        particles, added = inject_particles(
-            particles, terrain, num_new_particles=num_new, sources=injection_sources
-        )
-        # 実際に追加できた粒子数で流入を加算（質量保存）
-        mass_inflow += float(added) * float(particle_mass_mgC)
+        if num_new > 0:
+            base, remainder = divmod(num_new, len(injection_sources))
+            new_particles = []
+            added_total = 0
+            from .models.particle import Particle
+            for si, (sx, sy) in enumerate(injection_sources):
+                count = base + (1 if si < remainder else 0)
+                lab = source_labels[si]
+                for _ in range(count):
+                    x = sx + np.random.normal(scale=1.0)
+                    y = sy + np.random.normal(scale=1.0)
+                    if 0 <= x < width and 0 <= y < height and terrain[int(y), int(x)] == 1:
+                        new_particles.append(Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0, origin=lab, x0=x, y0=y))
+                        try:
+                            abs_dy = min(abs(y - p.y) for p in plants)
+                            abs_dy_samples.append(float(abs_dy))
+                        except Exception:
+                            pass
+                        added_total += 1
+            if len(new_particles) > 0:
+                if isinstance(particles, list):
+                    particles.extend(new_particles)
+                elif len(particles) == 0:
+                    particles = np.array(new_particles, dtype=object)
+                else:
+                    particles = np.concatenate((particles, np.array(new_particles, dtype=object)))
+            inflow_mgC_step = float(added_total) * float(particle_mass_mgC)
+            mass_inflow += inflow_mgC_step
+        if gate_enabled and step == 0:
+            assert_gate_effective(abs_dy_samples, min_median=min_median_abs_dy)
 
         # プランクトン（Chlorella）の自然死亡・再放出（CO2復帰）
+        reinj_mgC_step = 0.0
         for plant in plants:
             if plant.name == "Chlorella vulgaris" and plant.total_growth > 0:
                 mortal = plant.total_growth * chl_mortality
@@ -348,11 +578,38 @@ def run_simulation(
                     # 再注入の丸め誤差（mgC）を蓄積：正負どちらも取りうる
                     loss_quant_mgC += float(mortal) - float(n_rel) * float(particle_mass_mgC)
                     if n_rel > 0:
-                        particles, added_rel = inject_particles(
-                            particles, terrain, num_new_particles=n_rel, sources=[(plant.x, plant.y)]
-                        )
-                        # 再注入（流入）として会計。丸め分は loss_quant_mgC に反映済み。
-                        mass_inflow += float(added_rel) * float(particle_mass_mgC)
+                        # その場に起源ラベル付きで再注入（origin="reinj_<plant>")
+                        from .models.particle import Particle
+                        added_rel = 0
+                        for _ in range(n_rel):
+                            x = float(plant.x) + np.random.normal(scale=0.5)
+                            y = float(plant.y) + np.random.normal(scale=0.5)
+                            if 0 <= x < width and 0 <= y < height and terrain[int(y), int(x)] == 1:
+                                origin_lab = f"reinj_{_slugify(plant.name)}"
+                                pnew = Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0, origin=origin_lab, x0=x, y0=y)
+                                if isinstance(particles, list):
+                                    particles.append(pnew)
+                                elif len(particles) == 0:
+                                    particles = np.array([pnew], dtype=object)
+                                else:
+                                    particles = np.concatenate((particles, np.array([pnew], dtype=object)))
+                                added_rel += 1
+                        reinj_mgC = float(added_rel) * float(particle_mass_mgC)
+                        reinj_mgC_step += reinj_mgC
+                        mass_inflow += reinj_mgC
+
+        # ステップ末の質量保存チェック（任意）
+        if debug_mass_check:
+            curr_particles_mass_mgC = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
+            absorbed_mgC_step = float(step_absorbed) * float(particle_mass_mgC)
+            quant_delta_mgC = float(loss_quant_mgC) - float(prev_loss_quant_mgC)
+            inflow_total_step = float(inflow_mgC_step if 'inflow_mgC_step' in locals() else 0.0) + float(reinj_mgC_step)
+            left = prev_particles_mass_mgC + inflow_total_step
+            right = curr_particles_mass_mgC + outflow_mgC_step + absorbed_mgC_step - quant_delta_mgC
+            denom = max(left, right, 1.0)
+            rel_err = abs(left - right) / denom
+            if rel_err > 1e-6:
+                print(f"[mass-check] step={step} rel_err={rel_err:.3e} (prev={prev_particles_mass_mgC:.4f}, inflow={inflow_total_step:.4f}, outflow={outflow_mgC_step:.4f}, absorbed={absorbed_mgC_step:.4f}, quantΔ={quant_delta_mgC:.4f}, curr={curr_particles_mass_mgC:.4f})")
 
         # 可視化（任意/ライブ）
         if live_plot_interval > 0 and (step % live_plot_interval == 0):
@@ -401,10 +658,10 @@ def run_simulation(
             series["total_growth"].append(plant.total_growth)
 
     # ===== 結果集計 =====
-    species_fixed_totals = {plant.name: plant.total_fixed for plant in plants}
+    species_fixed_totals = {plant.name: (plant.total_fixed * float(particle_mass_mgC)) for plant in plants}
     print("\n=== 合計固定CO2量（植物種別） ===")
-    for species, total in species_fixed_totals.items():
-        print(f"{species}: {total:.2f}")
+    for species, total_mgC in species_fixed_totals.items():
+        print(f"{species}: {total_mgC:.2f} mgC")
 
     # 質量収支チェック（初期＋流入＝残量＋流出）
     current_particle_mass = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
@@ -429,17 +686,33 @@ def run_simulation(
 
     # 旧互換: 各種の合計（1行CSV）
     for plant in plants:
+        # Raw units (particle counts); kept for backward compatibility
         with open(os.path.join("results", f"result_{plant.name}.csv"), "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["total_absorbed", "total_fixed", "total_growth"])
+            writer.writerow(["total_absorbed", "total_fixed", "total_growth"])  # raw units
             writer.writerow([plant.total_absorbed, plant.total_fixed, plant.total_growth])
+        # Slugged filename in mgC (new)
+        slug = _slugify(plant.name)
+        with open(os.path.join("results", f"result_{slug}_mgC.csv"), "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["total_absorbed_mgC", "total_fixed_mgC", "total_growth_mgC"])
+            writer.writerow([
+                plant.total_absorbed * float(particle_mass_mgC),
+                plant.total_fixed * float(particle_mass_mgC),
+                plant.total_growth * float(particle_mass_mgC),
+            ])
 
     # 新: 全体サマリ
     with open(os.path.join("results", "summary_totals.csv"), "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["species", "total_absorbed", "total_fixed", "total_growth"])
+        writer.writerow(["species", "total_absorbed_mgC", "total_fixed_mgC", "total_growth_mgC"])
         for plant in plants:
-            writer.writerow([plant.name, plant.total_absorbed, plant.total_fixed, plant.total_growth])
+            writer.writerow([
+                plant.name,
+                plant.total_absorbed * float(particle_mass_mgC),
+                plant.total_fixed * float(particle_mass_mgC),
+                plant.total_growth * float(particle_mass_mgC),
+            ])
 
     # 新: 全体の時系列
     with open(os.path.join("results", "overall_timeseries.csv"), "w", newline="") as f:
@@ -482,13 +755,26 @@ def run_simulation(
                     series["total_fixed"][i],
                     series["total_growth"][i],
                 ])
+        # mgCスケールの並行出力
+        out_path_mgc = os.path.join("results", f"time_series_{slug}_mgC.csv")
+        with open(out_path_mgc, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["step", "total_absorbed_mgC", "total_fixed_mgC", "total_growth_mgC"])
+            for i in range(total_steps):
+                writer.writerow([
+                    i,
+                    series["total_absorbed"][i] * float(particle_mass_mgC),
+                    series["total_fixed"][i] * float(particle_mass_mgC),
+                    series["total_growth"][i] * float(particle_mass_mgC),
+                ])
 
     # 図の保存（見やすい可視化）
     try:
-        # 1) 種別ごとの合計（棒グラフ）
+        # 1) 種別ごとの合計（棒グラフ）。単位は mgC に統一
+        species_fixed_totals_mgC = {p.name: (p.total_fixed * float(particle_mass_mgC)) for p in plants}
         fig, ax = plt.subplots(figsize=(10, 5))
-        species = list(species_fixed_totals.keys())
-        totals = [species_fixed_totals[s] for s in species]
+        species = list(species_fixed_totals_mgC.keys())
+        totals = [species_fixed_totals_mgC[s] for s in species]
         ax.bar(species, totals)
         ax.set_xticklabels(species, rotation=45, ha="right")
         ax.set_ylabel("Total Fixed CO2 [mgC]")
@@ -536,6 +822,25 @@ def run_simulation(
         plt.close(fig)
     except Exception as e:
         print(f"[warn] Plotting failed: {e}")
+
+    # ===== Metrics output & dominance guard =====
+    try:
+        os.makedirs("outputs", exist_ok=True)
+        total_abs = sum(p.total_absorbed for p in plants)
+        species_share = {p.name: (p.total_absorbed / total_abs if total_abs > 0 else 0.0) for p in plants}
+        # dominance guard (configurable)
+        guard_dominance(species_share, max_share=dom_max_share, streak=dom_streak)
+        mean_travel = (travel_weighted_sum / travel_weight) if travel_weight > 0 else 0.0
+        metrics = {
+            "capture_matrix": capture_matrix,
+            "median_abs_dy_at_injection": (float(np.median(np.asarray(abs_dy_samples))) if len(abs_dy_samples) > 0 else None),
+            "mean_travel_before_capture_px": float(mean_travel),
+            "species_share": species_share,
+        }
+        with open(os.path.join("outputs", "metrics.json"), "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[warn] metrics output failed: {e}")
 
     return (
         env_series,
@@ -617,5 +922,20 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
     return results, nutrient_series, step_abs_total, step_fix_total
 
 if __name__ == "__main__":
-    # デフォルト設定で一度だけ走らせる
-    run_simulation()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pref1", action="store_true", help="Run 1-step preflight visualization and exit")
+    args = parser.parse_args()
+    run_simulation(pref1=bool(args.pref1))
+    # 非表示モードでは非対話バックエンド（CI/サーバー向け）
+    try:
+        if not show_plots:
+            plt.switch_backend("Agg")
+    except Exception:
+        pass
+
+    # ランごとに支配率ガード状態をリセット
+    try:
+        _dom_state.clear()
+    except Exception:
+        pass

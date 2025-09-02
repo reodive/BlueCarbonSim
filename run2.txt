@@ -1,6 +1,0 @@
-
-=== 合計固定CO2量（植物種別） ===
-Zostera marina: 0.00
-Macrocystis pyrifera: 23.34
-Chlorella vulgaris: 349.69
-Mass balance: Injected=2793.00 mgC, Absorbed=1194.82 mgC, Fixed=373.03 mgC, Outflow=1367.33 mgC, Remaining=1435.30 mgC, Quantization=9.63 mgC, Error=0.34%

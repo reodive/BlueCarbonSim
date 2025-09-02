@@ -1,3 +1,0 @@
-/Users/sakaileo/.matplotlib is not a writable directory
-Matplotlib created a temporary cache directory at /var/folders/3_/fbtcyvc958s34ndxpn55nstw0000gp/T/matplotlib-eajnscts because there was an issue with the default path (/Users/sakaileo/.matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
-Matplotlib is building the font cache; this may take a moment.

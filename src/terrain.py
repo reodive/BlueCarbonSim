@@ -2,10 +2,12 @@ import numpy as np
 
 
 def generate_depth_map(mode="random", width=50, height=50):
+    """Return depth map with shape (height, width) consistently."""
     if mode == "flat":
-        return np.full((width, height), 1.0)
+        return np.full((height, width), 1.0)
     elif mode == "slope":
-        return np.tile(np.linspace(0.2, 1.0, width), (height, 1)).T
+        # 0.2→1.0 along x (columns); tile over rows (height)
+        return np.tile(np.linspace(0.2, 1.0, width), (height, 1))
     elif mode == "bay":
         x = np.linspace(-1, 1, width)
         y = np.linspace(-1, 1, height)
@@ -13,7 +15,7 @@ def generate_depth_map(mode="random", width=50, height=50):
         radius = np.sqrt(X ** 2 + Y ** 2)
         return 1.0 - np.clip(radius, 0, 1)
     else:
-        return np.random.uniform(0.2, 1.0, size=(width, height))
+        return np.random.uniform(0.2, 1.0, size=(height, width))
 
 
 def create_terrain(width=100, height=100):
