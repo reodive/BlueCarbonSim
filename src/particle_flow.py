@@ -59,12 +59,27 @@ def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
 
 
 def generate_dynamic_flow_field(width, height, step):
+    """
+    動的流速場に右向きの基底流（外向き）と表層シアを追加。
+    目的:
+      - 左浅場に滞留しがちな粒子を中央/右へ搬送（Chlorella の独占回避）
+      - 右側（外洋）へも供給し、Posidonia/Kelp の遭遇率を上げる
+    """
     flow_field = np.zeros((height, width, 2))
+    # 基底の東向き（右向き）流。表層ほど強く、ステップで弱い季節性（緩い振動）。
+    base_east = 0.06 * (1.0 + 0.2 * np.sin(2 * np.pi * step / 60.0))
     for y in range(height):
+        depth_frac = y / max(height - 1, 1)
+        surface_shear = 1.0 - depth_frac  # 表層1.0 → 底0.0
         for x in range(width):
+            # 既存の渦成分（弱め）
             angle = np.sin((x + step * 0.1) * 0.1) + np.cos((y + step * 0.1) * 0.1)
-            flow_x = 0.1 * np.cos(angle)
-            flow_y = 0.1 * np.sin(angle)
+            flow_x = 0.06 * np.cos(angle)
+            flow_y = 0.06 * np.sin(angle)
+            # 基底流を加算（表層シア付き）
+            flow_x += base_east * (0.6 + 0.4 * surface_shear)
+            # ごく弱い上向き成分（再浮上を助ける）
+            flow_y += 0.01 * (surface_shear - 0.5)
             flow_field[y, x] = [flow_x, flow_y]
     return flow_field
 

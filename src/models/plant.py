@@ -9,6 +9,7 @@ class Plant:
         structure_density,
         opt_temp=20,
         light_tolerance=1.0,
+        light_half_saturation=0.5,
         salinity_range=(20, 35),
         absorption_efficiency=1.0,
         growth_rate=1.0,
@@ -22,6 +23,7 @@ class Plant:
         self.structure_density = structure_density
         self.opt_temp = opt_temp
         self.light_tolerance = light_tolerance
+        self.light_half_saturation = light_half_saturation
         self.salinity_range = salinity_range
         self.absorption_efficiency = absorption_efficiency
         self.growth_rate = growth_rate

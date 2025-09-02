@@ -23,9 +23,11 @@ from .utils.profile_adapter import normalize_profiles
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
-    深度の適地フィルタ。environment が返す depth_m と
-    plant.model_depth_range を使って、範囲外なら効率を0にする。
+    深度の適地フィルタ。
+    潮間帯（Spartina/Rhizophora）は水面直上～干出帯のため深度フィルタを適用しない。
     """
+    if getattr(plant, "name", "") in ("Spartina alterniflora", "Rhizophora spp."):
+        return eff  # 深度条件を外す
     dmin, dmax = getattr(plant, "model_depth_range", (0, 999))
     depth_m = float(env.get("depth_m", 0.0))
     return 0.0 if not (dmin <= depth_m <= dmax) else eff
@@ -88,19 +90,35 @@ def run_simulation(
     chl_mortality = float(cfg.get("chl_mortality_rate", 0.02))  # 2%/step
     live_plot_interval = int(cfg.get("live_plot_interval", 0))   # 0ならライブ描画なし
     show_plots = bool(cfg.get("show_plots", False))              # Trueでplt.show
+    # 潮間帯の稼働率（Spartina/Rhizophora の水没時間をモデル化）
+    tidal_period_steps = int(cfg.get("tidal_period_steps", 24))
+    intertidal_submergence_fraction = float(cfg.get("intertidal_submergence_fraction", 0.35))
+    intertidal_shallow_band_m = float(cfg.get("intertidal_shallow_band_m", 1.0))
 
     # 配置（9種の植物のレイアウト）
     plant_positions = {
-        "Zostera marina":            {"x": 18, "y": 72, "radius": 5},
-        "Halophila ovalis":          {"x": 25, "y": 68, "radius": 5},
-        "Posidonia oceanica":        {"x": 60, "y": 78, "radius": 6},
-        "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 7},
-        "Saccharina japonica":       {"x": 75, "y": 82, "radius": 7},
-        "Chlorella vulgaris":        {"x": 10, "y": 14, "radius": 3},
-        "Nannochloropsis gaditana":  {"x": 55, "y": 16, "radius": 3},
-        "Spartina alterniflora":     {"x": 12, "y": 95, "radius": 4},
-        "Rhizophora spp.":           {"x": 15, "y": 92, "radius": 4},
+        # 低塩→高塩の中間以上へ移動（y はそのまま/半径少し増やす）
+        "Zostera marina":            {"x": 30, "y": 28, "radius": 11},  # 半径を1だけ縮小
+        "Halophila ovalis":          {"x": 45, "y": 26, "radius": 8},   # ≥15 PSU
+        "Posidonia oceanica":        {"x": 95, "y": 30, "radius": 12},  # 半径拡大で遭遇率↑
+        "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 9},   # 半径拡大で遭遇率↑
+        "Saccharina japonica":       {"x": 75, "y": 82, "radius": 9},   # 半径拡大で遭遇率↑
+        "Chlorella vulgaris":        {"x": 10, "y": 14, "radius": 3},   # 0–10 PSU
+        "Nannochloropsis gaditana":  {"x": 70, "y": 16, "radius": 4},   # ≥20 PSU（OK）
+        "Spartina alterniflora":     {"x": 30, "y": 6,  "radius": 8},   # ≥10 PSU（左から右へ）
+        "Rhizophora spp.":           {"x": 20, "y": 7,  "radius": 8},   # ≥5 PSU（少し右へ）
     }
+
+    # 粒子の注入位置（境界条件に基づくバランス注入）
+    injection_sources = [
+        (2, int(height * 0.50)),          # 左・中層（低塩）
+        # (2, int(height * 0.20)),        # ←削除：左表層は強すぎるので切る
+        (int(width * 0.50), int(height * 0.20)),  # ★ 新規：中央・浅場（海草帯直上）
+        (int(width * 0.35), int(height * 0.28)),  # 追加：左中央・浅場（Zostera 帯直上）
+        (width - 2, int(height * 0.15)),  # 右・表層（高塩・有光）
+        (width - 2, int(height * 0.30)),  # 右・中浅（Posidonia/ケルプ中層）
+        (width - 2, int(height * 0.80)),  # 右・深め（ケルプ根本）
+    ]
 
     # 対象種を9種に拡張
     target_species = [
@@ -125,6 +143,7 @@ def run_simulation(
             structure_density=profile.get("structure_density", 1.0),
             opt_temp=profile.get("opt_temp", 20),
             light_tolerance=profile.get("light_tolerance", 1.0),
+            light_half_saturation=profile.get("light_half_saturation", 0.5),
             salinity_range=tuple(profile.get("salinity_range", (20, 35))),
             absorption_efficiency=profile.get("absorption_efficiency", 1.0),
             growth_rate=profile.get("growth_rate", 1.0),
@@ -159,9 +178,13 @@ def run_simulation(
     KD = float(cfg.get("kd_m_inv", 0.8))
     MAX_DEPTH_M = 8.0
     meters_per_pixel = MAX_DEPTH_M / max((height - 1), 1)
+    # プランクトンの水平広がり（m）→ ピクセル換算
+    plankton_radius_m = float(cfg.get("plankton_radius_m", 0.6))
+    plankton_radius_px = plankton_radius_m / max(meters_per_pixel, 1e-9)
     # フォトゾーン近似（e^-kd z = 0.1 → z ≈ 2.3/kd）
     euphotic_depth_m = 2.3 / max(KD, 1e-6)
     euphotic_px = int(euphotic_depth_m / meters_per_pixel)
+    intertidal_shallow_band_px = intertidal_shallow_band_m / max(meters_per_pixel, 1e-9)
 
     # 質量バランス用（mgC単位）
     mass_inflow = 0.0
@@ -216,21 +239,20 @@ def run_simulation(
         particles, outflow_mass_step = diffuse_particles(particles, terrain, flow_field)
         mass_outflow += float(outflow_mass_step) * float(particle_mass_mgC)
 
-        # 吸収処理（保存則を守る）
+        # 吸収処理（保存則を守る・競合按分）
         remaining_particles = []
         step_absorbed = 0.0
         step_fixed = 0.0
         step_growth = 0.0
         for particle in particles:
-            absorbed_here = False
+            # 1) この粒子に対して吸収可能な植物候補を列挙
+            candidates = []  # (plant, uptake_ratio)
             for plant in plants:
                 env = plant_env[plant.name]
                 eff = plant_eff[plant.name]
                 if eff <= 0.0:
                     continue
-                # 種別別の吸収ゾーン
                 name = plant.name
-                # 横方向の近接（根系/群落の空間範囲）
                 dx = particle.x - plant.x
                 dy = particle.y - plant.y
                 r2 = dx * dx + dy * dy
@@ -238,45 +260,80 @@ def run_simulation(
 
                 allowed = False
                 if name in ("Chlorella vulgaris",):
-                    # プランクトン: フォトゾーン（上層）で吸収可能
-                    allowed = (particle.y <= euphotic_px)
+                    # 有光層かつコロニー半径内のみ吸収
+                    within_colony = r2 <= (plankton_radius_px ** 2)
+                    allowed = (particle.y <= euphotic_px) and within_colony
                 elif name in ("Macrocystis pyrifera", "Saccharina japonica"):
-                    # ケルプ: 群落周囲 + 表層キャノピー
-                    kelp_band_m = 4.0
-                    surface_band_m = 1.5
+                    # コンセプト: ホルドファスト（海底付近）とキャノピー（表層）での捕捉を分ける。
+                    kelp_band_m = 5.0          # 海底近傍の鉛直作用帯（±m, やや拡大）
+                    surface_band_m = 3.0       # 表層の作用帯（0..m, キャノピー厚め）
                     kelp_band_px = kelp_band_m / meters_per_pixel
                     surface_band_px = surface_band_m / meters_per_pixel
-                    within_band = abs(dy) <= kelp_band_px and within_radius
+                    within_band = abs(dy) <= kelp_band_px
                     near_surface = particle.y <= surface_band_px
-                    allowed = within_band or near_surface
+                    horizontal_ok = abs(dx) <= plant.radius
+                    # 海底近傍: 完全な半径内 AND 作用帯内
+                    # 表層帯: 鉛直距離は不問、水平半径内であれば吸収可（キャノピー）
+                    allowed = (within_radius and within_band) or (horizontal_ok and near_surface)
                 else:
-                    # 海草: 群落の周囲の浅場のみ
-                    sg_band_m = 2.0
-                    sg_band_px = sg_band_m / meters_per_pixel
-                    allowed = within_radius and (abs(dy) <= sg_band_px)
+                    if name in ("Spartina alterniflora", "Rhizophora spp."):
+                        # 潮間帯: 水没時間のみに限定し、ごく表層かつ半径内
+                        tide_phase = (step % max(tidal_period_steps, 1)) / max(tidal_period_steps, 1)
+                        submerged = tide_phase < intertidal_submergence_fraction
+                        shallow_ok = particle.y <= intertidal_shallow_band_px
+                        allowed = submerged and shallow_ok and within_radius
+                    else:
+                        # 一般の海草: 半径内 + やや広い鉛直帯（±4 m）
+                        sg_band_m = 4.0
+                        if name == "Zostera marina":
+                            sg_band_m = 4.0  # Zostera も ±4 m に揃える
+                        sg_band_px = sg_band_m / meters_per_pixel
+                        allowed = within_radius and (abs(dy) <= sg_band_px)
 
                 if not allowed:
                     continue
 
                 uptake_ratio = eff * getattr(plant, "absorption_efficiency", 1.0)
-                uptake_ratio = min(max(uptake_ratio, 0.0), 1.0)
-                if uptake_ratio > 0 and particle.mass > 0:
-                    absorb_amount = particle.mass * uptake_ratio
-                    absorbed, fixed, growth = plant.absorb(absorb_amount)
-                    particle.mass -= absorbed
-                    step_absorbed += absorbed
-                    step_fixed += fixed
-                    step_growth += growth
-                    absorbed_here = True
-                    if particle.mass <= 1e-12:
-                        break
+                uptake_ratio = float(min(max(uptake_ratio, 0.0), 1.0))
+                if uptake_ratio > 0.0:
+                    candidates.append((plant, uptake_ratio))
+
+            # 2) 候補が無ければそのまま残す
+            if not candidates or particle.mass <= 1e-12:
+                if particle.mass > 1e-12:
+                    remaining_particles.append(particle)
+                continue
+
+            # 3) 吸収を候補間で按分（重み=uptake_ratio）
+            total_u = sum(u for _, u in candidates)
+            if total_u <= 1e-12:
+                remaining_particles.append(particle)
+                continue
+
+            # 粒子から引き抜く総量は "粒子質量 × min(total_u, 1)"
+            take_total = particle.mass * min(total_u, 1.0)
+            # 各候補への配分
+            for plant, u in candidates:
+                share = (u / total_u) * take_total
+                if share <= 0.0:
+                    continue
+                absorbed, fixed, growth = plant.absorb(share)
+                # plant.absorb は share をそのまま消費する前提（保存則）。
+                step_absorbed += absorbed
+                step_fixed += fixed
+                step_growth += growth
+
+            particle.mass -= take_total
             if particle.mass > 1e-12:
                 remaining_particles.append(particle)
+
         particles = np.array(remaining_particles, dtype=object)
 
         # 新規流入
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
-        particles, added = inject_particles(particles, terrain, num_new_particles=num_new)
+        particles, added = inject_particles(
+            particles, terrain, num_new_particles=num_new, sources=injection_sources
+        )
         # 実際に追加できた粒子数で流入を加算（質量保存）
         mass_inflow += float(added) * float(particle_mass_mgC)
 
@@ -465,6 +522,18 @@ def run_simulation(
         plt.tight_layout()
         plt.savefig(os.path.join("results", "selected_species_cumulative_fixed.png"))
         plt.close(fig)
+
+        # 4) 各種の累積吸収量（全9種）
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for name, series in species_series.items():
+            ax.plot(series["total_absorbed"], label=name)
+        ax.set_xlabel("Step")
+        ax.set_ylabel("Absorbed CO2")
+        ax.set_title("CO2 Absorption Over Time")
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join("results", "all_species_absorption.png"))
+        plt.close(fig)
     except Exception as e:
         print(f"[warn] Plotting failed: {e}")
 
@@ -492,6 +561,12 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
     results = {}
     nutrient_series = []
 
+    # 相対配分のため、各種の重み（absorption_rate または absorption_efficiency）を合計
+    total_abs_rate = 0.0
+    for _name, _params in plants.items():
+        total_abs_rate += float(_params.get("absorption_rate", _params.get("absorption_efficiency", 1.0)))
+    total_abs_rate = max(total_abs_rate, 1e-9)  # 0割防止
+
     step_abs_total = 0.0   # このステップでの総吸収
     step_fix_total = 0.0   # このステップでの総固定
 
@@ -515,14 +590,16 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
 
         efficiency = float(temp_eff) * float(light_eff) * float(sal_eff)
 
-        # JSONのキー名に合わせる
-        abs_rate = params.get("absorption_rate", params.get("absorption_efficiency", 1.0))
+        # JSONのキー名に合わせる（相対配分）
+        weight   = float(params.get("absorption_rate", params.get("absorption_efficiency", 1.0)))
+        share    = weight / total_abs_rate
         fix_rate = params.get("fixation_rate", params.get("fixation_ratio", 0.7))
         growth_r = params.get("growth_rate", 0.0)
 
-        absorbed = abs_rate * co2 * efficiency
-        fixed = absorbed * fix_rate
-        growth = growth_r * absorbed
+        # その種の吸収量 = このステップのCO2 × 効率 × 相対シェア
+        absorbed = float(co2) * float(efficiency) * float(share)
+        fixed = absorbed * float(fix_rate)
+        growth = float(growth_r) * absorbed
 
         step_abs_total += absorbed
         step_fix_total += fixed

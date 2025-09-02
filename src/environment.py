@@ -143,7 +143,7 @@ def compute_efficiency_score(
     - 底質: 種×底質で係数、既定は {mud:1.0, sand:0.7, rock:0.85}
     """
 
-    # 光：I / (I + I_half) で 0..1
+    # 光：I / (I + I_half) で 0..1（半飽和光量）
     I = env["light"]  # 0..1
     I_half = getattr(plant, "light_half_saturation", 0.5)  # 0.2〜0.7 推奨
     light_eff = I / (I + max(I_half, 1e-6))
@@ -154,9 +154,8 @@ def compute_efficiency_score(
     temp_eff = math.exp(-0.5 * ((env["temperature"] - opt_temp) / max(sigma, 1e-6)) ** 2)
     temp_eff = clip01(temp_eff)
 
-    # 光
-    lt = max(getattr(plant, "light_tolerance", 1.0), 1e-6)
-    light_eff = clip01(env["light"] / lt)
+    #（注意）以前の `light_tolerance` による再スケーリングは廃止
+    # 半飽和モデルに統一し、profile_adapter で与える `light_half_saturation` を使用。
 
     # 塩分（重複ペナルティ禁止）
     smin, smax = getattr(plant, "salinity_range", (20.0, 32.0))
