@@ -560,12 +560,13 @@ def run_simulation(
                 remaining_particles.append(particle)
 
         particles = np.array(remaining_particles, dtype=object)
-        # 簡易ダンプ（診断用）
-        if step == total_steps - 1:
-            try:
-                print(debug_hits)
-            except Exception:
-                pass
+        # ステップ終端で診断シリーズに追記
+        if diag_enabled:
+            for p in plants:
+                ds = debug_hits[p.name]
+                diag_series[p.name]["visits"].append(int(ds["visits"]))
+                diag_series[p.name]["eligible"].append(int(ds["eligible"]))
+                diag_series[p.name]["absorptions"].append(int(ds["absorptions"]))
 
         # 新規流入（等分配）: 起源ラベル付きで注入し、縦ゲートの有効性も計測
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
@@ -598,6 +599,8 @@ def run_simulation(
                         except Exception:
                             pass
                         added_total += 1
+            if diag_enabled:
+                inj_series.append([int(step)] + [int(c) for c in counts])
             if len(new_particles) > 0:
                 if isinstance(particles, list):
                     particles.extend(new_particles)
@@ -866,6 +869,37 @@ def run_simulation(
         plt.close(fig)
     except Exception as e:
         print(f"[warn] Plotting failed: {e}")
+
+    # ===== Diagnostics output =====
+    if diag_enabled:
+        try:
+            os.makedirs("outputs/diagnostics", exist_ok=True)
+            # per-species
+            for name in target_species:
+                slug = _slugify(name)
+                path = os.path.join("outputs/diagnostics", f"species_diag_{slug}.csv")
+                with open(path, "w", newline="") as f:
+                    w = csv.writer(f)
+                    w.writerow(["step", "visits", "eligible", "absorptions"])  # eff0内訳は必要時に追加
+                    steps = range(total_steps)
+                    vs = diag_series[name]["visits"] if name in diag_series else []
+                    es = diag_series[name]["eligible"] if name in diag_series else []
+                    as_ = diag_series[name]["absorptions"] if name in diag_series else []
+                    for i in steps:
+                        v = vs[i] if i < len(vs) else 0
+                        e = es[i] if i < len(es) else 0
+                        a = as_[i] if i < len(as_) else 0
+                        w.writerow([i, v, e, a])
+            # injection counts
+            if inj_series:
+                inj_path = os.path.join("outputs/diagnostics", "injection_counts.csv")
+                with open(inj_path, "w", newline="") as f:
+                    w = csv.writer(f)
+                    w.writerow(["step"] + source_labels)
+                    for row in inj_series:
+                        w.writerow(row)
+        except Exception as e:
+            print(f"[warn] diagnostics output failed: {e}")
 
     # ===== Metrics output & dominance guard =====
     try:
