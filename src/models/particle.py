@@ -16,6 +16,9 @@ class Particle:
         self.origin = kwargs.get("origin", None)  # e.g., "src0" or "init"
         self.x0 = kwargs.get("x0", x)
         self.y0 = kwargs.get("y0", y)
+        # Contact memory for two-stage gate: consecutive-in-contact steps per species
+        # Key: species name (str) -> int count of consecutive steps within base footprint
+        self.contact_steps = {}
 
 
 def initialize_particles(num_particles: int, terrain: np.ndarray) -> np.ndarray:

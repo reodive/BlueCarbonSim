@@ -2,7 +2,7 @@ import numpy as np
 from .models.particle import Particle
 
 
-def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
+def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5, reflect_boundaries: bool = False):
     """
     粒子の拡散・移流（簡易）と開境界の処理。
     - 左端: 河川側（主に入流想定）
@@ -48,8 +48,17 @@ def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5):
         crossed_top = (new_y == 0 and trial_y < 0)
         crossed_bottom = (new_y == height - 1 and trial_y > (height - 1))
         if crossed_left or crossed_right or crossed_top or crossed_bottom:
-            outflow_mass += particle.mass
-            continue
+            if reflect_boundaries:
+                # Simple specular reflection at domain borders
+                if crossed_left or crossed_right:
+                    trial_x = x - dx  # invert
+                if crossed_top or crossed_bottom:
+                    trial_y = y - dy
+                new_x = float(np.clip(trial_x, 0, width - 1))
+                new_y = float(np.clip(trial_y, 0, height - 1))
+            else:
+                outflow_mass += particle.mass
+                continue
 
         if terrain[int(new_y), int(new_x)] == 1:
             particle.x = new_x

@@ -8,13 +8,19 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     """
     cfg: Dict[str, Any] = {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith("#"):
-                    continue
-                if ":" not in s:
-                    continue
+        # Read bytes then decode with UTF-8, fallback to cp932 (Windows)
+        with open(path, "rb") as fb:
+            raw = fb.read()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("cp932", errors="ignore")
+        for line in text.splitlines(True):
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            if ":" not in s:
+                continue
                 k, v = s.split(":", 1)
                 key = k.strip()
                 val = v.strip()

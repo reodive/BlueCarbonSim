@@ -1,0 +1,7 @@
+﻿seed: 42
+reflect_boundaries: false
+injection_sigma_px: 2.5
+injection_drift_px_per_step: 0.3
+init_particles_min_dist_px: 10
+plankton_capture_radius_m: 2.5
+microalgae_min_eff: 0.15

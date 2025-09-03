@@ -1,22 +1,32 @@
-# 単位・境界に関する基本設定
+# 単位と基本設定
+
+# 粒子1個あたりの炭素質量 [mgC]
+particle_mass_mgC: 1.0
+
+# 季節性CO2流入の基準 [mgC/step]
+inflow_mgC_per_step_base: 30.0
+
+# Chlorella などプランクトンの自然死亡率 [/step]
+chl_mortality_rate: 0.02
+
+# 光学減衰係数 kd [m^-1]（小さいほど深場まで光が届く）
+kd_m_inv: 0.6
+
+# 流れスケール（0.2?1.0 で調整）
+flow_scale: 0.7
+
+# 検証用: 簡易サニティモード（true で kd=0, 一様流, 塩分・温度一定）
+sanity_uniform: false
+
+# プランクトンのコロニー到達半径 [m]
+plankton_radius_m: 0.9
+
+# 微細藻（Chlorella, Nannochloropsis）に適用する効率の下限
+# 0.0 だと候補になっても実質吸収ゼロになりやすい
+plankton_capture_radius_m: 3.0
+microalgae_min_eff: 0.2
+injection_sigma_px: 2.0
+diag_enabled: true
 
-# 粒子1個あたりの炭素質量 [mgC]
-particle_mass_mgC: 1.0
+diag_enabled: true
 
-# 季節性CO2流入の基準 [mgC/step]
-inflow_mgC_per_step_base: 30.0
-
-# Chlorella（プランクトン）の自然死亡率 [/step]
-chl_mortality_rate: 0.02
-
-# 光学減衰係数 kd [m^-1]（小さいほど深場まで光が届く）
-kd_m_inv: 0.6
-\n+# 流速スケール（0.6〜1.2で感度試験）
-flow_scale: 0.7
-\n+# 検証用: 均一サニティモード（trueでkd=0, 一様流, 塩分/温度一定）
-sanity_uniform: false
-
-# プランクトンのコロニー到達半径 [m]
-plankton_radius_m: 0.9
-
-sanity_uniform: true
