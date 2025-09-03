@@ -11,3 +11,12 @@ chl_mortality_rate: 0.02
 
 # 光学減衰係数 kd [m^-1]（小さいほど深場まで光が届く）
 kd_m_inv: 0.6
+\n+# 流速スケール（0.6〜1.2で感度試験）
+flow_scale: 0.7
+\n+# 検証用: 均一サニティモード（trueでkd=0, 一様流, 塩分/温度一定）
+sanity_uniform: false
+
+# プランクトンのコロニー到達半径 [m]
+plankton_radius_m: 0.9
+
+sanity_uniform: true

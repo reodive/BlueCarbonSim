@@ -229,6 +229,8 @@ def run_simulation(
     show_plots = bool(cfg.get("show_plots", False))              # Trueでplt.show
     debug_mass_check = bool(cfg.get("debug_mass_check", False))  # 毎ステップの質量保存チェック
     flow_scale = float(cfg.get("flow_scale", 1.0))               # 流速スケール（感度確認用）
+    # サニティ用の均一モードの有無
+    sanity_uniform = bool(cfg.get("sanity_uniform", False))
     # 潮間帯の稼働率（Spartina/Rhizophora の水没時間をモデル化）
     tidal_period_steps = int(cfg.get("tidal_period_steps", 24))
     intertidal_submergence_fraction = float(cfg.get("intertidal_submergence_fraction", 0.35))
@@ -238,7 +240,7 @@ def run_simulation(
     plant_positions = {
         # 低塩→高塩の中間以上へ移動（y はそのまま/半径少し増やす）
         "Zostera marina":            {"x": 30, "y": 28, "radius": 11},  # 半径を1だけ縮小
-        "Halophila ovalis":          {"x": 45, "y": 26, "radius": 8},   # ≥15 PSU
+        "Halophila ovalis":          {"x": 45, "y": 26, "radius": 10},  # 半径+2で遭遇率↑（≥15 PSU）
         "Posidonia oceanica":        {"x": 95, "y": 30, "radius": 12},  # 半径拡大で遭遇率↑
         "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 9},   # 半径拡大で遭遇率↑
         "Saccharina japonica":       {"x": 75, "y": 82, "radius": 9},   # 半径拡大で遭遇率↑
@@ -248,15 +250,13 @@ def run_simulation(
         "Rhizophora spp.":           {"x": 20, "y": 7,  "radius": 8},   # ≥5 PSU（少し右へ）
     }
 
-    # 粒子の注入位置（境界条件に基づくバランス注入）
+    # 粒子の注入位置（境界×層に固定。種直上は使わない）
     injection_sources = [
-        (2, int(height * 0.50)),          # 左・中層（低塩）
-        # (2, int(height * 0.20)),        # ←削除：左表層は強すぎるので切る
-        (int(width * 0.50), int(height * 0.20)),  # ★ 新規：中央・浅場（海草帯直上）
-        (int(width * 0.35), int(height * 0.28)),  # 追加：左中央・浅場（Zostera 帯直上）
-        (width - 2, int(height * 0.15)),  # 右・表層（高塩・有光）
-        (width - 2, int(height * 0.30)),  # 右・中浅（Posidonia/ケルプ中層）
-        (width - 2, int(height * 0.80)),  # 右・深め（ケルプ根本）
+        (2, int(height * 0.20)),   # 左・表層（Chlorella/Halophila 対応）
+        (2, int(height * 0.50)),   # 左・中層
+        (width - 2, int(height * 0.15)),  # 右・表層
+        (width - 2, int(height * 0.30)),  # 右・中浅
+        (width - 2, int(height * 0.80)),  # 右・深め
     ]
 
     # ===== Guard config & schema (lightweight validation) =====
@@ -336,6 +336,8 @@ def run_simulation(
     # Geometry guard: adjust or abort if any source collides with plant footprints
     injection_sources = validate_geometry(injection_sources, plants, width, height, margin_px=min_dist_px)
 
+    # フェアネス再重み付けは行わない（供給は環境に依存、種には依存しない）
+
     # Pref1: one-step visualization and exit (no main loop)
     if pref1:
         try:
@@ -359,7 +361,7 @@ def run_simulation(
     MAX_DEPTH_M = 8.0
     meters_per_pixel = MAX_DEPTH_M / max((height - 1), 1)
     # プランクトンの水平広がり（m）→ ピクセル換算
-    plankton_radius_m = float(cfg.get("plankton_radius_m", 0.6))
+    plankton_radius_m = float(cfg.get("plankton_radius_m", 0.9))
     plankton_radius_px = plankton_radius_m / max(meters_per_pixel, 1e-9)
     # フォトゾーン近似（e^-kd z = 0.1 → z ≈ 2.3/kd）
     euphotic_depth_m = 2.3 / max(KD, 1e-6)
@@ -392,13 +394,24 @@ def run_simulation(
         # ステップごとに環境評価をキャッシュ
         plant_env, plant_eff = {}, {}
         for i, plant in enumerate(plants):
-            env = get_environmental_factors(
-                plant.x, plant.y, step,
-                total_steps=total_steps, width=width, height=height,
-                salinity_mode="linear_x",  # 汽水域: 左低塩→右高塩
-                S_min=0.0, S_max=35.0,      # 左端を低塩（淡水寄り）に設定
-                kd_m_inv=KD, max_depth_m=MAX_DEPTH_M,
-            )
+            if sanity_uniform:
+                env = get_environmental_factors(
+                    plant.x, plant.y, step,
+                    total_steps=total_steps, width=width, height=height,
+                    salinity_mode="constant",
+                    S_mean=28.0, S_amp=0.0,
+                    kd_m_inv=0.0, max_depth_m=MAX_DEPTH_M,
+                    T_mean=20.0, T_amp=0.0, I0_daylen_frac=1.0,
+                    nutrient_mean=0.5, nutrient_amp=0.0, nutrient_pulse_period=0,
+                )
+            else:
+                env = get_environmental_factors(
+                    plant.x, plant.y, step,
+                    total_steps=total_steps, width=width, height=height,
+                    salinity_mode="linear_x",  # 汽水域: 左低塩→右高塩
+                    S_min=0.0, S_max=35.0,      # 左端を低塩（淡水寄り）に設定
+                    kd_m_inv=KD, max_depth_m=MAX_DEPTH_M,
+                )
             px, py = int(plant.x), int(plant.y)
             bottom_type = bottom_type_map[py, px] if (0 <= py < height and 0 <= px < width) else "mud"
 
@@ -425,12 +438,17 @@ def run_simulation(
         chlorella_absorbed_series.append(plants[5].total_absorbed)
 
         # 粒子拡散（開境界で流出をカウント）
-        flow_field = generate_dynamic_flow_field(width, height, step, scale=flow_scale)
+        if sanity_uniform:
+            flow_field = np.zeros((height, width, 2))
+            flow_field[:, :, 0] = 0.05 * float(flow_scale)
+        else:
+            flow_field = generate_dynamic_flow_field(width, height, step, scale=flow_scale)
         particles, outflow_mass_step = diffuse_particles(particles, terrain, flow_field)
         outflow_mgC_step = float(outflow_mass_step) * float(particle_mass_mgC)
         mass_outflow += outflow_mgC_step
 
         # 吸収処理（保存則を守る・競合按分）
+        debug_hits = {p.name: {"visits": 0, "eligible": 0, "absorptions": 0} for p in plants}
         remaining_particles = []
         step_absorbed = 0.0
         step_fixed = 0.0
@@ -439,6 +457,7 @@ def run_simulation(
             # 1) この粒子に対して吸収可能な植物候補を列挙
             candidates = []  # (plant, uptake_ratio)
             for plant in plants:
+                debug_hits[plant.name]["visits"] += 1
                 env = plant_env[plant.name]
                 eff = plant_eff[plant.name]
                 if eff <= 0.0:
@@ -468,16 +487,14 @@ def run_simulation(
                     allowed = (within_radius and within_band) or (horizontal_ok and near_surface)
                 else:
                     if name in ("Spartina alterniflora", "Rhizophora spp."):
-                        # 潮間帯: 水没時間のみに限定し、ごく表層かつ半径内
-                        tide_phase = (step % max(tidal_period_steps, 1)) / max(tidal_period_steps, 1)
-                        submerged = tide_phase < intertidal_submergence_fraction
+                        # 潮間帯: 表層・半径内は候補化し、吸収比に連続ゲートを掛ける
                         shallow_ok = particle.y <= intertidal_shallow_band_px
-                        allowed = submerged and shallow_ok and within_radius
+                        allowed = shallow_ok and within_radius
                     else:
                         # 一般の海草: 半径内 + やや広い鉛直帯（±4 m）
                         sg_band_m = 4.0
                         if name == "Zostera marina":
-                            sg_band_m = 4.0  # Zostera も ±4 m に揃える
+                            sg_band_m = 4.0
                         sg_band_px = sg_band_m / meters_per_pixel
                         allowed = within_radius and (abs(dy) <= sg_band_px)
 
@@ -485,7 +502,17 @@ def run_simulation(
                     continue
 
                 uptake_ratio = eff * getattr(plant, "absorption_efficiency", 1.0)
+                # 潮間帯の連続ゲート（0..1）
+                if name in ("Spartina alterniflora", "Rhizophora spp."):
+                    phase = 2.0 * np.pi * ((step % max(tidal_period_steps, 1)) / max(tidal_period_steps, 1))
+                    submergence = 0.5 + 0.5 * np.sin(phase)
+                    thr = 1.0 - intertidal_submergence_fraction
+                    gate = (submergence - thr) / max(intertidal_submergence_fraction, 1e-9)
+                    gate = float(min(max(gate, 0.0), 1.0))
+                    uptake_ratio *= gate
                 uptake_ratio = float(min(max(uptake_ratio, 0.0), 1.0))
+                if uptake_ratio > 0.0 and allowed:
+                    debug_hits[plant.name]["eligible"] += 1
                 if uptake_ratio > 0.0:
                     candidates.append((plant, uptake_ratio))
 
@@ -509,6 +536,7 @@ def run_simulation(
                 if share <= 0.0:
                     continue
                 absorbed, fixed, growth = plant.absorb(share)
+                debug_hits[plant.name]["absorptions"] += 1
                 # plant.absorb は share をそのまま消費する前提（保存則）。
                 step_absorbed += absorbed
                 step_fixed += fixed
@@ -532,16 +560,32 @@ def run_simulation(
                 remaining_particles.append(particle)
 
         particles = np.array(remaining_particles, dtype=object)
+        # 簡易ダンプ（診断用）
+        if step == total_steps - 1:
+            try:
+                print(debug_hits)
+            except Exception:
+                pass
 
         # 新規流入（等分配）: 起源ラベル付きで注入し、縦ゲートの有効性も計測
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
         if num_new > 0:
-            base, remainder = divmod(num_new, len(injection_sources))
+            # 重み付け（左表層に30%を配分、他は均等）
+            weights = [0.30, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0]
+            wsum = sum(weights) or 1.0
+            ideal = [w / wsum * num_new for w in weights]
+            counts = [int(x) for x in ideal]
+            deficit = num_new - sum(counts)
+            if deficit > 0:
+                order = sorted(range(len(ideal)), key=lambda i: ideal[i] - counts[i], reverse=True)
+                for i in range(deficit):
+                    counts[order[i % len(order)]] += 1
+
             new_particles = []
             added_total = 0
             from .models.particle import Particle
             for si, (sx, sy) in enumerate(injection_sources):
-                count = base + (1 if si < remainder else 0)
+                count = counts[si]
                 lab = source_labels[si]
                 for _ in range(count):
                     x = sx + np.random.normal(scale=1.0)
