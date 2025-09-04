@@ -7,10 +7,10 @@ particle_mass_mgC: 1.0
 inflow_mgC_per_step_base: 30.0
 
 # Chlorella などプランクトンの自然死亡率 [/step]
-chl_mortality_rate: 0.02
+chl_mortality_rate: 0.02
 
 # 光学減衰係数 kd [m^-1]（小さいほど深場まで光が届く）
-kd_m_inv: 0.9
+kd_m_inv: 0.6
 
 # 流れスケール（0.2?1.0 で調整）
 flow_scale: 0.7
@@ -25,18 +25,18 @@ plankton_radius_m: 0.9
 # 0.0 だと候補になっても実質吸収ゼロになりやすい
 plankton_capture_radius_m: 3.0
 microalgae_min_eff: 0.2
-injection_sigma_px: 2.0
+injection_sigma_px: 3.5
 diag_enabled: true
 
 diag_enabled: true
 
 # Eelgrass-favoring knobs
-zostera_radius: 13
-eelgrass_shallow_bonus: 1.3
+zostera_radius: 16
+eelgrass_shallow_bonus: 1.5
 eelgrass_shallow_cutoff_m: 3.0
 eelgrass_low_nutrient_bonus: 0.3
-eelgrass_mid_boost_factor: 2.0
-eelgrass_mid_boost_center_frac: 0.5
+eelgrass_mid_boost_factor: 2.5
+eelgrass_mid_boost_center_frac: 0.35
 eelgrass_mid_boost_k: 8.0
 
 # Microalgae seasonality
@@ -45,5 +45,33 @@ chl_uptake_season_amp: 0.25
 
 # Encounter/Uptake knobs
 use_swept_contact: true
-seagrass_min_contact_steps: 1
-microalgae_uptake_scale: 0.6
+seagrass_min_contact_steps: 0
+microalgae_uptake_scale: 0.4
+
+# Chlorella nerf knobs
+# Stronger mortality (shorter lifespan) and near-zero fixation
+chl_mortality_rate: 0.25
+chlorella_fixation_ratio: 0.02
+
+# Permanence (decay of fixed pool)
+permanence_enabled: true
+# Optional per-species overrides (steps). Examples:
+# half_life_Zostera_marina_steps: 300
+# half_life_Halophila_ovalis_steps: 250
+# half_life_Posidonia_oceanica_steps: 350
+# half_life_Macrocystis_pyrifera_steps: 120
+# half_life_Saccharina_japonica_steps: 120
+# half_life_Chlorella_vulgaris_steps: 15
+# half_life_Nannochloropsis_gaditana_steps: 15
+# half_life_Spartina_alterniflora_steps: 600
+# half_life_Rhizophora_spp._steps: 1000
+
+# Intertidal narrowing to reduce early upstream capture
+intertidal_shallow_band_m: 0.6
+
+# Kelp bands (m)
+kelp_bottom_band_m: 5.0
+kelp_surface_band_m: 3.0
+# Injection vertical sweep (pixels)
+injection_sweep_amp_px: 6.0
+injection_sweep_period_steps: 36

@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-# src/simulation.py
+﻿# src/simulation.py
 import csv
 import json
 import os
@@ -181,16 +180,17 @@ def guard_sensitivity(baseline: Dict[str, float], alt: Dict[str, float], eps: fl
 
 def apply_depth_filter(eff: float, plant, env) -> float:
     """
-    雎ｺ・ｱ陟趣ｽｦ邵ｺ・ｮ鬩包ｽｩ陜ｨ・ｰ郢晁ｼ斐≦郢晢ｽｫ郢ｧ・ｿ邵ｲ繝ｻ
-    雋趣ｽｮ鬮｢轣假ｽｸ・ｯ繝ｻ繝ｻpartina/Rhizophora繝ｻ蟲ｨ繝ｻ雎鯉ｽｴ鬮ｱ・｢騾ｶ・ｴ闕ｳ螂・ｽｽ讒ｫ・ｹ・ｲ陷・ｽｺ陝ｶ・ｯ邵ｺ・ｮ邵ｺ貅假ｽ∬ｱｺ・ｱ陟趣ｽｦ郢晁ｼ斐≦郢晢ｽｫ郢ｧ・ｿ郢ｧ蟶昶・騾包ｽｨ邵ｺ蜉ｱ竊醍ｸｺ繝ｻﾂ繝ｻ
+    豺ｱ蠎ｦ縺ｮ驕ｩ蝨ｰ繝輔ぅ繝ｫ繧ｿ縲・
+    貎ｮ髢灘ｸｯ・・partina/Rhizophora・峨・豌ｴ髱｢逶ｴ荳奇ｽ槫ｹｲ蜃ｺ蟶ｯ縺ｮ縺溘ａ豺ｱ蠎ｦ繝輔ぅ繝ｫ繧ｿ繧帝←逕ｨ縺励↑縺・・
     """
     if getattr(plant, "name", "") in ("Spartina alterniflora", "Rhizophora spp."):
-        return eff  # 雎ｺ・ｱ陟趣ｽｦ隴夲ｽ｡闔会ｽｶ郢ｧ雋橸ｽ､謔ｶ笘・    dmin, dmax = getattr(plant, "model_depth_range", (0, 999))
+        return eff  # 豺ｱ蠎ｦ譚｡莉ｶ繧貞､悶☆
+    dmin, dmax = getattr(plant, "model_depth_range", (0, 999))
     depth_m = float(env.get("depth_m", 0.0))
     return 0.0 if not (dmin <= depth_m <= dmax) else eff
 
 def seasonal_inflow(step, total_steps, base_mgC_per_step=30.0, particle_mass_mgC=1.0):
-    """Return seasonal inflow as particle count (mgC/step -> count)."""
+    """蟄｣遽諤ｧ縺ｮCO竄よｵ∝・・・gC/step・峨ｒ邊貞ｭ先焚縺ｫ螟画鋤縺励※霑斐☆"""
     cycle = 2 * np.pi * step / total_steps
     mgc = base_mgC_per_step * (0.5 + 0.5 * np.sin(cycle))
     count = int(round(mgc / max(particle_mass_mgC, 1e-9)))
@@ -201,7 +201,7 @@ profiles = normalize_profiles(profiles_raw)
 
 
 def _slugify(name: str) -> str:
-    """Safe slug for filenames."""
+    """繝輔ぃ繧､繝ｫ蜷咲畑縺ｫ螳牙・縺ｪ繧ｹ繝ｩ繝・げ縺ｸ螟画鋤"""
     s = re.sub(r"\s+", "_", name.strip())
     s = re.sub(r"[^A-Za-z0-9_.-]", "", s)
     return s
@@ -217,55 +217,51 @@ def run_simulation(
     schema_path: str = "config/schema.json",
     pref1: bool = False,
 ):
-    """Run the simulation and return series and outputs."""
+    """繧ｷ繝溘Η繝ｬ繝ｼ繧ｷ繝ｧ繝ｳ繧貞ｮ溯｡後＠縲∝推遞ｮ繧ｷ繝ｪ繝ｼ繧ｺ縺ｨ邨先棡繧定ｿ斐☆"""
 
-    # 陜ｨ・ｰ陟厄ｽ｢邵ｺ・ｨ雎ｺ・ｱ陟趣ｽｦ郢晄ｧｭ繝｣郢昴・
+    # 蝨ｰ蠖｢縺ｨ豺ｱ蠎ｦ繝槭ャ繝・
     terrain, depth_map = create_terrain(width, height)
 
-    # 陷・ｽｺ陷牙ｸｷ逡醍ｹｧ・ｷ郢晢ｽｪ郢晢ｽｼ郢ｧ・ｺ
+    # 蜃ｺ蜉帷畑繧ｷ繝ｪ繝ｼ繧ｺ
     env_series: List[float] = []
     nutrient_series: List[float] = []
 
-    # 驍擾ｽｯ驕ｨ謳ｾ・ｼ莠･繝ｻ闖ｴ髮｣・ｼ繝ｻ
-    internal_series: List[float] = []  # 陷茨ｽｨ驕橸ｽｮ邵ｺ・ｮ total_growth 陷ｷ驛・ｽｨ闌ｨ・ｼ閧ｲ・ｴ・ｯ驕ｨ謳ｾ・ｼ繝ｻ
-    fixed_series: List[float] = []     # 陷茨ｽｨ驕橸ｽｮ邵ｺ・ｮ total_fixed 陷ｷ驛・ｽｨ闌ｨ・ｼ閧ｲ・ｴ・ｯ驕ｨ謳ｾ・ｼ繝ｻ
-    released_series: List[float] = []  # 闔閧ｲ・ｴ繝ｻ・ｼ蝓滓ざ闖ｴ・ｿ騾包ｽｨ繝ｻ繝ｻ
-    carbon_series: List[float] = []    # 陷ｷ蠕｡・ｸ螂・ｽｼ莠包ｽｺ閧ｲ・ｴ繝ｻ・ｼ繝ｻ
+    # 邏ｯ遨搾ｼ亥・菴難ｼ・
+    internal_series: List[float] = []  # 蜈ｨ遞ｮ縺ｮ total_growth 蜷郁ｨ茨ｼ育ｴｯ遨搾ｼ・
+    fixed_series: List[float] = []     # 蜈ｨ遞ｮ縺ｮ total_fixed 蜷郁ｨ茨ｼ育ｴｯ遨搾ｼ・
+    released_series: List[float] = []  # 莠育ｴ・ｼ域悴菴ｿ逕ｨ・・
+    carbon_series: List[float] = []    # 蜷御ｸ奇ｼ井ｺ育ｴ・ｼ・
 
-    # 郢ｧ・ｹ郢昴・繝｣郢晉軸・ｯ雜｣・ｼ莠･繝ｻ闖ｴ髮｣・ｼ繝ｻ
+    # 繧ｹ繝・ャ繝玲ｯ趣ｼ亥・菴難ｼ・
     step_absorbed_series: List[float] = []
     step_fixed_series: List[float] = []
     step_growth_series: List[float] = []
     particle_count_series: List[int] = []
 
-    # 闔会ｽ｣髯ｦ・ｨ3驕橸ｽｮ繝ｻ莠･・ｾ譴ｧ蟀ｿ闔蜻磯共騾包ｽｨ繝ｻ繝ｻ
+    # 莉｣陦ｨ3遞ｮ・亥ｾ梧婿莠呈鋤逕ｨ・・
     zostera_fixed_series, kelp_fixed_series, chlorella_fixed_series = [], [], []
     zostera_growth_series, kelp_growth_series, chlorella_growth_series = [], [], []
     zostera_absorbed_series, kelp_absorbed_series, chlorella_absorbed_series = [], [], []
     os.makedirs("results", exist_ok=True)
 
-    # 髫ｪ・ｭ陞ｳ螟奇ｽｪ・ｭ邵ｺ・ｿ髴趣ｽｼ邵ｺ・ｿ繝ｻ莠･閻ｰ闖ｴ蜥ｲ・ｭ莨夲ｽｼ繝ｻ
+    # 險ｭ螳夊ｪｭ縺ｿ霎ｼ縺ｿ・亥腰菴咲ｭ会ｼ・
     cfg = load_config()
     particle_mass_mgC = float(cfg.get("particle_mass_mgC", 1.0))
     inflow_mgC_per_step_base = float(cfg.get("inflow_mgC_per_step_base", 30.0))
     chl_mortality = float(cfg.get("chl_mortality_rate", 0.02))  # 2%/step
-    live_plot_interval = int(cfg.get("live_plot_interval", 0))   # 0邵ｺ・ｪ郢ｧ蟲ｨﾎ帷ｹｧ・､郢晏戟邱帝包ｽｻ邵ｺ・ｪ邵ｺ繝ｻ
-    show_plots = bool(cfg.get("show_plots", False))              # True邵ｺ・ｧplt.show
-    debug_mass_check = bool(cfg.get("debug_mass_check", False))  # 雎亥ｼｱ縺帷ｹ昴・繝｣郢晏干繝ｻ髮会ｽｪ鬩･荳茨ｽｿ譎擾ｽｭ蛟･繝｡郢ｧ・ｧ郢昴・縺・    flow_scale = float(cfg.get("flow_scale", 1.0))               # 雎ｬ繝ｻﾂ貅倥○郢ｧ・ｱ郢晢ｽｼ郢晢ｽｫ繝ｻ蝓溪楳陟趣ｽｦ驕抵ｽｺ髫ｱ蜥ｲ逡代・繝ｻ
-    # 郢ｧ・ｵ郢昜ｹ昴Θ郢ｧ・｣騾包ｽｨ邵ｺ・ｮ陜ｮ繝ｻ・ｸﾂ郢晢ｽ｢郢晢ｽｼ郢晏ｳｨ繝ｻ隴幄・笏・    sanity_uniform = bool(cfg.get("sanity_uniform", False))
-    # 雎包ｽｨ陷茨ｽ･陋ｻ繝ｻ・ｸ繝ｻ・ｼ閧ｲ・ｩ・ｺ鬮｢阮吶Σ郢ｧ・､郢ｧ・｢郢ｧ・ｹ驍ｱ・ｩ陷･讙守舞繝ｻ繝ｻ    injection_sigma_px = float(cfg.get("injection_sigma_px", 1.0))
-    # 豕ｨ蜈･蛻・ｸ・ｼ育ｩｺ髢薙ヰ繧､繧｢繧ｹ邱ｩ蜥檎畑・・    injection_drift_px_per_step = float(cfg.get("injection_drift_px_per_step", 0.0))
+    live_plot_interval = int(cfg.get("live_plot_interval", 0))   # 0縺ｪ繧峨Λ繧､繝匁緒逕ｻ縺ｪ縺・
+    show_plots = bool(cfg.get("show_plots", False))              # True縺ｧplt.show
+    debug_mass_check = bool(cfg.get("debug_mass_check", False))  # 豈弱せ繝・ャ繝励・雉ｪ驥丈ｿ晏ｭ倥メ繧ｧ繝・け
+    flow_scale = float(cfg.get("flow_scale", 1.0))               # 豬・溘せ繧ｱ繝ｼ繝ｫ・域─蠎ｦ遒ｺ隱咲畑・・
+    # 繧ｵ繝九ユ繧｣逕ｨ縺ｮ蝮・ｸ繝｢繝ｼ繝峨・譛臥┌
+    sanity_uniform = bool(cfg.get("sanity_uniform", False))
+    # 豕ｨ蜈･蛻・ｸ・ｼ育ｩｺ髢薙ヰ繧､繧｢繧ｹ邱ｩ蜥檎畑・・    injection_sigma_px = float(cfg.get("injection_sigma_px", 1.0))
+    # 注入分布（空間バイアス緩和用）
+    injection_drift_px_per_step = float(cfg.get("injection_drift_px_per_step", 0.0))
     microalgae_min_eff = float(cfg.get("microalgae_min_eff", 0.0))
     tidal_period_steps = int(cfg.get("tidal_period_steps", 24))
     intertidal_submergence_fraction = float(cfg.get("intertidal_submergence_fraction", 0.35))
     intertidal_shallow_band_m = float(cfg.get("intertidal_shallow_band_m", 1.0))
-    # Kelp band widths (configurable)
-    kelp_bottom_band_m = float(cfg.get("kelp_bottom_band_m", 5.0))
-    kelp_surface_band_m = float(cfg.get("kelp_surface_band_m", 3.0))
-
-    # Injection sweep (vertical sinusoidal sweep of injection y)
-    injection_sweep_amp_px = float(cfg.get("injection_sweep_amp_px", 0.0))
-    injection_sweep_period_steps = int(cfg.get("injection_sweep_period_steps", 0))
     # Encounter/uptake knobs (configurable)
     use_swept_contact = bool(cfg.get("use_swept_contact", False))
     seagrass_min_contact_steps = int(cfg.get("seagrass_min_contact_steps", 2))
@@ -283,41 +279,43 @@ def run_simulation(
     chl_mortality_amp = float(cfg.get("chl_mortality_amp", 0.05))
     chl_uptake_season_amp = float(cfg.get("chl_uptake_season_amp", 0.3))
 
-    # 鬩溷調・ｽ・ｮ繝ｻ繝ｻ驕橸ｽｮ邵ｺ・ｮ隶蜥ｲ鮟・ｸｺ・ｮ郢晢ｽｬ郢ｧ・､郢ｧ・｢郢ｧ・ｦ郢晁肩・ｼ繝ｻ
+    # 驟咲ｽｮ・・遞ｮ縺ｮ讀咲黄縺ｮ繝ｬ繧､繧｢繧ｦ繝茨ｼ・
     plant_positions = {
-        # 闖ｴ荳ｻ・｡・ｩ遶雁ｸ晢ｽｫ莨懶ｽ｡・ｩ邵ｺ・ｮ闕ｳ・ｭ鬮｢隰趣ｽｻ・･闕ｳ鄙ｫ竏磯§・ｻ陷榊桁・ｼ繝ｻ 邵ｺ・ｯ邵ｺ譏ｴ繝ｻ邵ｺ・ｾ邵ｺ・ｾ/陷企宦・ｾ繝ｻ・ｰ莉｣・陟・干・・ｸｺ蜻ｻ・ｼ繝ｻ
-        "Zostera marina":            {"x": 30, "y": 28, "radius": 11},  # 陷企宦・ｾ繝ｻ・・邵ｺ・ｰ邵ｺ驢搾ｽｸ・ｮ陝・・
-        "Halophila ovalis":          {"x": 45, "y": 26, "radius": 10},  # 陷企宦・ｾ繝ｻ2邵ｺ・ｧ鬩包ｽｭ鬩輔・邏ｫ遶頑汚・ｼ驕ｺ鄙・5 PSU繝ｻ繝ｻ
-        "Posidonia oceanica":        {"x": 95, "y": 30, "radius": 12},  # 陷企宦・ｾ繝ｻ蜒題棔・ｧ邵ｺ・ｧ鬩包ｽｭ鬩輔・邏ｫ遶翫・
-        "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 9},   # 陷企宦・ｾ繝ｻ蜒題棔・ｧ邵ｺ・ｧ鬩包ｽｭ鬩輔・邏ｫ遶翫・
-        "Saccharina japonica":       {"x": 75, "y": 82, "radius": 9},   # 陷企宦・ｾ繝ｻ蜒題棔・ｧ邵ｺ・ｧ鬩包ｽｭ鬩輔・邏ｫ遶翫・
-        "Chlorella vulgaris":        {"x": 10, "y": 14, "radius": 3},   # 0遯ｶ繝ｻ0 PSU
-        "Nannochloropsis gaditana":  {"x": 70, "y": 16, "radius": 4},   # 遶包ｽ･20 PSU繝ｻ繝ｻK繝ｻ繝ｻ
-        "Spartina alterniflora":     {"x": 30, "y": 6,  "radius": 8},   # 遶包ｽ･10 PSU繝ｻ莠･・ｷ・ｦ邵ｺ荵晢ｽ芽愾・ｳ邵ｺ・ｸ繝ｻ繝ｻ
-        "Rhizophora spp.":           {"x": 20, "y": 7,  "radius": 8},   # 遶包ｽ･5 PSU繝ｻ莠･・ｰ莉｣・陷ｿ・ｳ邵ｺ・ｸ繝ｻ繝ｻ
+        # 菴主｡ｩ竊帝ｫ伜｡ｩ縺ｮ荳ｭ髢謎ｻ･荳翫∈遘ｻ蜍包ｼ・ 縺ｯ縺昴・縺ｾ縺ｾ/蜊雁ｾ・ｰ代＠蠅励ｄ縺呻ｼ・
+        "Zostera marina":            {"x": 30, "y": 28, "radius": 11},  # 蜊雁ｾ・ｒ1縺縺醍ｸｮ蟆・
+        "Halophila ovalis":          {"x": 45, "y": 26, "radius": 10},  # 蜊雁ｾ・2縺ｧ驕ｭ驕・紫竊托ｼ遺翁15 PSU・・
+        "Posidonia oceanica":        {"x": 95, "y": 30, "radius": 12},  # 蜊雁ｾ・僑螟ｧ縺ｧ驕ｭ驕・紫竊・
+        "Macrocystis pyrifera":      {"x": 85, "y": 80, "radius": 9},   # 蜊雁ｾ・僑螟ｧ縺ｧ驕ｭ驕・紫竊・
+        "Saccharina japonica":       {"x": 75, "y": 82, "radius": 9},   # 蜊雁ｾ・僑螟ｧ縺ｧ驕ｭ驕・紫竊・
+        "Chlorella vulgaris":        {"x": 10, "y": 14, "radius": 3},   # 0窶・0 PSU
+        "Nannochloropsis gaditana":  {"x": 70, "y": 16, "radius": 4},   # 竕･20 PSU・・K・・
+        "Spartina alterniflora":     {"x": 30, "y": 6,  "radius": 8},   # 竕･10 PSU・亥ｷｦ縺九ｉ蜿ｳ縺ｸ・・
+        "Rhizophora spp.":           {"x": 20, "y": 7,  "radius": 8},   # 竕･5 PSU・亥ｰ代＠蜿ｳ縺ｸ・・
     }
 
-    # 驍願ｲ橸ｽｭ闊後・雎包ｽｨ陷茨ｽ･闖ｴ蜥ｲ・ｽ・ｮ繝ｻ莠･・｢繝ｻ髦懶ｾ・懶ｽｱ・､邵ｺ・ｫ陜暦ｽｺ陞ｳ螢ｹﾂ繧会ｽｨ・ｮ騾ｶ・ｴ闕ｳ鄙ｫ繝ｻ闖ｴ・ｿ郢ｧ荳岩・邵ｺ繝ｻ・ｼ繝ｻ
+    # 邊貞ｭ舌・豕ｨ蜈･菴咲ｽｮ・亥｢・阜ﾃ怜ｱ､縺ｫ蝗ｺ螳壹らｨｮ逶ｴ荳翫・菴ｿ繧上↑縺・ｼ・
     injection_sources = [
-        (2, int(height * 0.20)),   # 陝ｾ・ｦ郢晢ｽｻ髯ｦ・ｨ陞ｻ・､繝ｻ繝ｻhlorella/Halophila 陝・ｽｾ陟｢諛ｶ・ｼ繝ｻ
-        (2, int(height * 0.50)),   # 陝ｾ・ｦ郢晢ｽｻ闕ｳ・ｭ陞ｻ・､
-        (width - 2, int(height * 0.15)),  # 陷ｿ・ｳ郢晢ｽｻ髯ｦ・ｨ陞ｻ・､
-        (width - 2, int(height * 0.30)),  # 陷ｿ・ｳ郢晢ｽｻ闕ｳ・ｭ雎ｬ繝ｻ
-        (width - 2, int(height * 0.80)),  # 陷ｿ・ｳ郢晢ｽｻ雎ｺ・ｱ郢ｧ繝ｻ
+        (2, int(height * 0.20)),   # 蟾ｦ繝ｻ陦ｨ螻､・・hlorella/Halophila 蟇ｾ蠢懶ｼ・
+        (2, int(height * 0.50)),   # 蟾ｦ繝ｻ荳ｭ螻､
+        (width - 2, int(height * 0.15)),  # 蜿ｳ繝ｻ陦ｨ螻､
+        (width - 2, int(height * 0.30)),  # 蜿ｳ繝ｻ荳ｭ豬・
+        (width - 2, int(height * 0.80)),  # 蜿ｳ繝ｻ豺ｱ繧・
     ]
 
     # ===== Guard config & schema (lightweight validation) =====
     guard_cfg = load_config(guard_config_path) if os.path.exists(guard_config_path) else {}
     min_dist_px = int(guard_cfg.get("min_dist_px", 3))
     gate_enabled = bool(guard_cfg.get("gate_enabled", False))
-    # diagnostics flag can come from guard.yaml or fallback to main config
-    diag_enabled = bool(guard_cfg.get(
-        "diag_enabled",
+    # 診断の有効化（guard.yaml優先、無ければconfig.yaml）
+    diag_enabled = bool(
         guard_cfg.get(
-            "diagnostics_enabled",
-            bool(cfg.get("diag_enabled", cfg.get("diagnostics_enabled", False)))
-        ),
-    ))
+            "diag_enabled",
+            guard_cfg.get(
+                "diagnostics_enabled",
+                bool(cfg.get("diag_enabled", cfg.get("diagnostics_enabled", False)))
+            ),
+        )
+    )
     min_median_abs_dy = float(guard_cfg.get("vertical_gate_min_median_abs_dy_px", 0.8))
     dom_max_share = float(guard_cfg.get("dominance_max_share", 0.65))
     dom_streak = int(guard_cfg.get("dominance_streak", 3))
@@ -335,7 +333,7 @@ def run_simulation(
         except Exception as e:
             raise ValueError(f"Guard schema validation failed: {e}")
 
-    # 陝・ｽｾ髮趣ｽ｡驕橸ｽｮ郢ｧ繝ｻ驕橸ｽｮ邵ｺ・ｫ隲｡・｡陟托ｽｵ
+    # 蟇ｾ雎｡遞ｮ繧・遞ｮ縺ｫ諡｡蠑ｵ
     target_species = [
         "Zostera marina",
         "Halophila ovalis",
@@ -374,28 +372,20 @@ def run_simulation(
                     p.radius = int(zrad)
             except Exception:
                 pass
-        # Nerf Chlorella via config override for fixation ratio
-        if p.name == "Chlorella vulgaris":
-            try:
-                fr = cfg.get("chlorella_fixation_ratio", None)
-                if fr is not None:
-                    p.fixation_ratio = float(fr)
-            except Exception:
-                pass
-        # depth range 郢ｧ雋橸ｽｱ讓環・ｧ邵ｺ・ｨ邵ｺ蜉ｱ窶ｻ闔牙・ｽｸ繝ｻ
+        # depth range 繧貞ｱ樊ｧ縺ｨ縺励※莉倅ｸ・
         setattr(p, "model_depth_range", tuple(profile.get("model_depth_range", (1, 6))))
         plants.append(p)
 
-    # 陋ｻ譎・ｄ驍願ｲ橸ｽｭ繝ｻ
+    # 蛻晄悄邊貞ｭ・
     particles = initialize_particles(num_particles, terrain)
 
-    # 陝ｯ・ｩ郢ｧ・ｪ郢晄じ縺夂ｹｧ・ｧ郢ｧ・ｯ郢昴・
+    # 蟯ｩ繧ｪ繝悶ず繧ｧ繧ｯ繝・
     rocks = [
         {"x": width // 2, "y": int(height * 0.5), "w": 12, "h": 8},
         {"x": int(width * 0.7), "y": int(height * 0.3), "w": 8, "h": 5},
     ]
 
-    # 陟取・・ｳ・ｪ郢晄ｧｭ繝｣郢昴・
+    # 蠎戊ｳｪ繝槭ャ繝・
     bottom_type_map = np.full((height, width), "mud", dtype=object)
     bottom_type_map[90:100, 0:33] = "mud"
     bottom_type_map[90:100, 33:66] = "sand"
@@ -408,7 +398,7 @@ def run_simulation(
     # Geometry guard: adjust or abort if any source collides with plant footprints
     injection_sources = validate_geometry(injection_sources, plants, width, height, margin_px=min_dist_px)
 
-    # 郢晁ｼ斐♂郢ｧ・｢郢晞亂縺幄怙蝓ｼ纃ｾ邵ｺ・ｿ闔牙･・邵ｺ・ｯ髯ｦ蠕鯉ｽ冗ｸｺ・ｪ邵ｺ繝ｻ・ｼ莠包ｽｾ蟶ｷ・ｵ・ｦ邵ｺ・ｯ霑ｺ・ｰ陟・・竊楢嵩譎擾ｽｭ蛟･ﾂ竏ｫ・ｨ・ｮ邵ｺ・ｫ邵ｺ・ｯ關捺剌・ｭ蛟･・邵ｺ・ｪ邵ｺ繝ｻ・ｼ繝ｻ
+    # 繝輔ぉ繧｢繝阪せ蜀埼㍾縺ｿ莉倥￠縺ｯ陦後ｏ縺ｪ縺・ｼ井ｾ帷ｵｦ縺ｯ迺ｰ蠅・↓萓晏ｭ倥∫ｨｮ縺ｫ縺ｯ萓晏ｭ倥＠縺ｪ縺・ｼ・
 
     # Pref1: one-step visualization and exit (no main loop)
     if pref1:
@@ -427,26 +417,27 @@ def run_simulation(
         save_pref1_snapshot((height, width), plants, injection_sources, p0, outdir="outputs")
         return (), (), (), (), (), [], [], [], [], [], []
 
-    # ===== 郢晢ｽ｡郢ｧ・､郢晢ｽｳ郢晢ｽｫ郢晢ｽｼ郢昴・=====
-    # 霑夲ｽｩ騾・・・ｰ・ｺ陟趣ｽｦ繝ｻ繝ｻnvironment 邵ｺ・ｨ隰ｨ・ｴ陷ｷ闌ｨ・ｼ繝ｻ
+    # ===== 繝｡繧､繝ｳ繝ｫ繝ｼ繝・=====
+    # 迚ｩ逅・ｰｺ蠎ｦ・・nvironment 縺ｨ謨ｴ蜷茨ｼ・
     KD = float(cfg.get("kd_m_inv", 0.8))
     MAX_DEPTH_M = 8.0
     meters_per_pixel = MAX_DEPTH_M / max((height - 1), 1)
-    # 郢晏干ﾎ帷ｹ晢ｽｳ郢ｧ・ｯ郢晏現ﾎｦ邵ｺ・ｮ雎鯉ｽｴ陝ｷ・ｳ陟弱・窶ｲ郢ｧ螂・ｽｼ繝ｻ繝ｻ菫・・ 郢晄鱒縺醍ｹｧ・ｻ郢晢ｽｫ隰蟶ｷ・ｮ繝ｻ
+    # 繝励Λ繝ｳ繧ｯ繝医Φ縺ｮ豌ｴ蟷ｳ蠎・′繧奇ｼ・・俄・ 繝斐け繧ｻ繝ｫ謠帷ｮ・
     plankton_radius_m = float(cfg.get("plankton_radius_m", 0.9))
     plankton_radius_px = plankton_radius_m / max(meters_per_pixel, 1e-9)
-    # 蠕ｮ邏ｰ阯ｻ縺ｮ謐墓拷蜊雁ｾ・ｼ亥ｺ・ａ縺ｮ譌｢螳壹ｒ險ｱ螳ｹ・・    plankton_capture_radius_px = float(cfg.get("plankton_capture_radius_m", max(plankton_radius_m, 2.0))) / max(meters_per_pixel, 1e-9)
-    # 郢晁ｼ斐°郢晏現縺郢晢ｽｼ郢晢ｽｳ髴大床・ｼ・ｼ繝ｻ繝ｻ^-kd z = 0.1 遶翫・z 遶輔・2.3/kd繝ｻ繝ｻ
+    # 微細藻の捕捉半径（広めの既定を許容）
+    plankton_capture_radius_px = float(cfg.get("plankton_capture_radius_m", max(plankton_radius_m, 2.0))) / max(meters_per_pixel, 1e-9)
+    # 繝輔か繝医だ繝ｼ繝ｳ霑台ｼｼ・・^-kd z = 0.1 竊・z 竕・2.3/kd・・
     euphotic_depth_m = 2.3 / max(KD, 1e-6)
     euphotic_px = int(euphotic_depth_m / meters_per_pixel)
     intertidal_shallow_band_px = intertidal_shallow_band_m / max(meters_per_pixel, 1e-9)
 
-    # 髮会ｽｪ鬩･荳翫Σ郢晢ｽｩ郢晢ｽｳ郢ｧ・ｹ騾包ｽｨ繝ｻ繝ｻgC陷雁・ｽｽ謳ｾ・ｼ繝ｻ
+    # 雉ｪ驥上ヰ繝ｩ繝ｳ繧ｹ逕ｨ・・gC蜊倅ｽ搾ｼ・
     mass_inflow = 0.0
     mass_outflow = 0.0
     mass_initial = float(len(particles)) * float(particle_mass_mgC)
     loss_quant_mgC = 0.0  # reinjection rounding loss (mgC)
-    # 驕橸ｽｮ陋ｻ・･邵ｺ譁絶・邵ｺ・ｮ驍擾ｽｯ驕ｨ髦ｪ縺咏ｹ晢ｽｪ郢晢ｽｼ郢ｧ・ｺ繝ｻ莠･繝ｻ郢ｧ・ｹ郢昴・繝｣郢晄圜・ｼ繝ｻ
+    # 遞ｮ蛻･縺斐→縺ｮ邏ｯ遨阪す繝ｪ繝ｼ繧ｺ・亥・繧ｹ繝・ャ繝暦ｼ・
     species_series: Dict[str, Dict[str, List[float]]] = {
         name: {"total_absorbed": [], "total_fixed": [], "total_growth": []}
         for name in target_species
@@ -456,24 +447,22 @@ def run_simulation(
     source_labels = [f"src{i}" for i in range(len(injection_sources))]
     capture_matrix: Dict[str, Dict[str, float]] = {lab: {name: 0.0 for name in target_species} for lab in source_labels + ["init"]}
     abs_dy_samples: List[float] = []
-    # 髫ｪ・ｺ隴・ｽｭ郢晁・繝｣郢晁ｼ斐＜
+    # 險ｺ譁ｭ繝舌ャ繝輔ぃ
     diag_series: Dict[str, Dict[str, List[int]]] = (
         {name: {"visits": [], "eligible": [], "absorptions": []} for name in target_species}
         if diag_enabled else {}
     )
     inj_series: List[List[int]] = []
     inj_xy_rows: List[List[float]] = []
-    # Index rows for results/index.csv (species name, slug, summary filename, timeseries filename)
-    index_rows: List[List[str]] = []
     travel_weighted_sum = 0.0
     travel_weight = 0.0
 
     for step in range(total_steps):
-        # 髮会ｽｪ鬩･謫ｾ・ｼ繝ｻgC繝ｻ蟲ｨ縺帷ｹ晉ｿｫ繝｣郢晏干縺咏ｹ晢ｽｧ郢昴・繝ｨ繝ｻ蛹ｻ縺帷ｹ昴・繝｣郢晄懃√繝ｻ繝ｻ
+        # 雉ｪ驥擾ｼ・gC・峨せ繝翫ャ繝励す繝ｧ繝・ヨ・医せ繝・ャ繝怜燕・・
         prev_particles_mass_mgC = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
         prev_loss_quant_mgC = float(loss_quant_mgC)
 
-        # 郢ｧ・ｹ郢昴・繝｣郢晏干・・ｸｺ・ｨ邵ｺ・ｫ霑ｺ・ｰ陟・・・ｩ遨ゑｽｾ・｡郢ｧ蛛ｵ縺冗ｹ晢ｽ｣郢昴・縺咏ｹ晢ｽ･
+        # 繧ｹ繝・ャ繝励＃縺ｨ縺ｫ迺ｰ蠅・ｩ穂ｾ｡繧偵く繝｣繝・す繝･
         plant_env, plant_eff = {}, {}
         for i, plant in enumerate(plants):
             if sanity_uniform:
@@ -490,15 +479,15 @@ def run_simulation(
                 env = get_environmental_factors(
                     plant.x, plant.y, step,
                     total_steps=total_steps, width=width, height=height,
-                    salinity_mode="linear_x",  # 雎趣ｽｽ雎鯉ｽｴ陜薙・ 陝ｾ・ｦ闖ｴ荳ｻ・｡・ｩ遶願ｲ樊価鬯ｮ莨懶ｽ｡・ｩ
-                    S_min=0.0, S_max=35.0,      # 陝ｾ・ｦ驕ｶ・ｯ郢ｧ蜑・ｽｽ荳ｻ・｡・ｩ繝ｻ蝓滂ｽｷ・｡雎鯉ｽｴ陝・・・翫・蟲ｨ竊馴坎・ｭ陞ｳ繝ｻ
+                    salinity_mode="linear_x",  # 豎ｽ豌ｴ蝓・ 蟾ｦ菴主｡ｩ竊貞承鬮伜｡ｩ
+                    S_min=0.0, S_max=35.0,      # 蟾ｦ遶ｯ繧剃ｽ主｡ｩ・域ｷ｡豌ｴ蟇・ｊ・峨↓險ｭ螳・
                     kd_m_inv=KD, max_depth_m=MAX_DEPTH_M,
                 )
             px, py = int(plant.x), int(plant.y)
             bottom_type = bottom_type_map[py, px] if (0 <= py < height and 0 <= px < width) else "mud"
 
             eff = compute_efficiency_score(plant, env, bottom_type=bottom_type)
-            eff = apply_depth_filter(eff, plant, env)  # 雎ｺ・ｱ陟趣ｽｦ郢晢ｽｬ郢晢ｽｳ郢ｧ・ｸ陞滓じ繝ｻ0
+            eff = apply_depth_filter(eff, plant, env)  # 豺ｱ蠎ｦ繝ｬ繝ｳ繧ｸ螟悶・0
             plant_env[plant.name] = env
             plant_eff[plant.name] = eff
             # Favor eelgrass (Zostera marina) in shallow, low-nutrient conditions
@@ -520,8 +509,8 @@ def run_simulation(
                 env_series.append(eff)
                 nutrient_series.append(env["nutrient"])
 
-        # 隶蜥ｲ鮟・ｸｺ譁絶・邵ｺ・ｮ驍擾ｽｯ驕ｨ蝓ｼ纃ｼ
-        # 驍擾ｽｯ驕ｨ髦ｪ縺咏ｹ晢ｽｪ郢晢ｽｼ郢ｧ・ｺ繝ｻ莠包ｽｻ・｣髯ｦ・ｨ3驕橸ｽｮ邵ｺ・ｯ陟墓｢ｧ蟀ｿ闔蜻磯共陷ｷ蜥ｲ・ｧ・ｰ邵ｺ・ｫ陷ｷ蛹ｻ・冗ｸｺ蟶吮ｻ髫ｪ蛟ｬ鮖ｸ繝ｻ繝ｻ
+        # 讀咲黄縺斐→縺ｮ邏ｯ遨埼㍼
+        # 邏ｯ遨阪す繝ｪ繝ｼ繧ｺ・井ｻ｣陦ｨ3遞ｮ縺ｯ蠕梧婿莠呈鋤蜷咲ｧｰ縺ｫ蜷医ｏ縺帙※險倬鹸・・
         # Zostera marina: index 0, Macrocystis pyrifera: index 3, Chlorella vulgaris: index 5
         zostera_fixed_series.append(plants[0].total_fixed)
         kelp_fixed_series.append(plants[3].total_fixed)
@@ -533,7 +522,7 @@ def run_simulation(
         kelp_absorbed_series.append(plants[3].total_absorbed)
         chlorella_absorbed_series.append(plants[5].total_absorbed)
 
-        # 驍願ｲ橸ｽｭ蜈亥ヱ隰ｨ・｣繝ｻ逎ｯ蟷戊・・髦懃ｸｺ・ｧ雎ｬ竏昴・郢ｧ蛛ｵ縺咲ｹｧ・ｦ郢晢ｽｳ郢晁肩・ｼ繝ｻ
+        # 邊貞ｭ先僑謨｣・磯幕蠅・阜縺ｧ豬∝・繧偵き繧ｦ繝ｳ繝茨ｼ・
         if sanity_uniform:
             flow_field = np.zeros((height, width, 2))
             flow_field[:, :, 0] = 0.05 * float(flow_scale)
@@ -546,19 +535,20 @@ def run_simulation(
         outflow_mgC_step = float(outflow_mass_step) * float(particle_mass_mgC)
         mass_outflow += outflow_mgC_step
 
-        # 陷ｷ・ｸ陷ｿ荳ｻ繝ｻ騾・・・ｼ莠包ｽｿ譎擾ｽｭ莨懈抄郢ｧ雋橸ｽｮ蛹ｻ・狗ｹ晢ｽｻ驕ｶ・ｶ陷ｷ蝓滓ｽ碑崕繝ｻ・ｼ繝ｻ
+        # 蜷ｸ蜿主・逅・ｼ井ｿ晏ｭ伜援繧貞ｮ医ｋ繝ｻ遶ｶ蜷域潔蛻・ｼ・
         debug_hits = {p.name: {"visits": 0, "eligible": 0, "absorptions": 0} for p in plants}
         remaining_particles = []
         step_absorbed = 0.0
         step_fixed = 0.0
         step_growth = 0.0
         for particle in particles:
-            # 1) 邵ｺ阮吶・驍願ｲ橸ｽｭ闊娯・陝・ｽｾ邵ｺ蜉ｱ窶ｻ陷ｷ・ｸ陷ｿ荳ｻ蠎・妙・ｽ邵ｺ・ｪ隶蜥ｲ鮟・屐蜻ｵ・｣諛奇ｽ定崕邇ｲ雖・            candidates = []  # (plant, uptake_ratio)
+            # 1) 縺薙・邊貞ｭ舌↓蟇ｾ縺励※蜷ｸ蜿主庄閭ｽ縺ｪ讀咲黄蛟呵｣懊ｒ蛻玲嫌
+            candidates = []  # (plant, uptake_ratio)
             for plant in plants:
                 name = plant.name
                 env = plant_env[name]
                 eff = plant_eff[name]
-                # 陟包ｽｮ驍擾ｽｰ髦ｯ・ｻ邵ｺ・ｯ visit/eligible 陋ｻ・､陞ｳ螢ｹ繝ｻ邵ｺ貅假ｽ・eff<=0 邵ｺ・ｧ郢ｧ繧・ｽｹ・ｾ闖ｴ蜍滓・陞ｳ螢ｹ・帝勗蠕娯鴬
+                # 蠕ｮ邏ｰ阯ｻ縺ｯ visit/eligible 蛻､螳壹・縺溘ａ eff<=0 縺ｧ繧ょｹｾ菴募愛螳壹ｒ陦後≧
                 if eff <= 0.0 and name not in ("Chlorella vulgaris", "Nannochloropsis gaditana"):
                     continue
                 dx = particle.x - plant.x
@@ -575,7 +565,7 @@ def run_simulation(
                         )
                     except Exception:
                         swept_hit = False
-                # 髴醍ｬｬ逎∬ｰｿ・ｵ鬮ｫ雜｣・ｼ驛・ｽｨ・ｺ隴・ｽｭ騾包ｽｨ繝ｻ繝ｻ                visited = False
+                # 霑第磁谿ｵ髫趣ｼ郁ｨｺ譁ｭ逕ｨ・・                visited = False
                 eligible_flag = False
                 if name in ("Chlorella vulgaris", "Nannochloropsis gaditana"):
                     cap2 = (plankton_capture_radius_px ** 2)
@@ -591,32 +581,32 @@ def run_simulation(
                 else:
                     visited = (r2 <= (plant.radius * plant.radius * 4.0))
                     eligible_flag = (r2 <= (plant.radius * plant.radius * 2.25))
-                # visits 縺ｯ allowed 遒ｺ螳壼ｾ後↓郢ｰ繧贋ｸ翫￡蜿肴丐縺吶ｋ
+                # visits は allowed 確定後に繰り上げ反映する
 
                 allowed = False
                 if name in ("Chlorella vulgaris",):
-                    # 隴帷甥繝ｻ陞ｻ・､邵ｺ荵昶命郢ｧ・ｳ郢晢ｽｭ郢昜ｹ昴・陷企宦・ｾ繝ｻ繝ｻ邵ｺ・ｮ邵ｺ・ｿ陷ｷ・ｸ陷ｿ繝ｻ
+                    # 譛牙・螻､縺九▽繧ｳ繝ｭ繝九・蜊雁ｾ・・縺ｮ縺ｿ蜷ｸ蜿・
                     within_capture = r2 <= (plankton_capture_radius_px ** 2)
                     allowed = (particle.y <= euphotic_px) and within_capture
                 elif name in ("Macrocystis pyrifera", "Saccharina japonica"):
-                    # 郢ｧ・ｳ郢晢ｽｳ郢ｧ・ｻ郢晏干繝ｨ: 郢晏ｸ厥晉ｹ晏ｳｨ繝ｵ郢ｧ・｡郢ｧ・ｹ郢晁肩・ｼ蝓滂ｽｵ・ｷ陟守ｩゑｽｻ蛟ｩ・ｿ謇假ｽｼ蟲ｨ竊堤ｹｧ・ｭ郢晢ｽ｣郢晏ｼｱ繝ｴ郢晢ｽｼ繝ｻ驛・ｽ｡・ｨ陞ｻ・､繝ｻ蟲ｨ縲堤ｸｺ・ｮ隰仙｢捺狭郢ｧ雋槭・邵ｺ莉｣・狗ｸｲ繝ｻ
-                    kelp_band_m = float(kelp_bottom_band_m)          # 雎ｬ・ｷ陟取・・ｿ螟ｧ・咲ｸｺ・ｮ鬩ｩ蟶ｷ蟲ｩ闖ｴ諛・舞陝ｶ・ｯ繝ｻ謖会ｽｱm, 郢ｧ繝ｻ・・ｫ｡・｡陞滂ｽｧ繝ｻ繝ｻ
-                    surface_band_m = float(kelp_surface_band_m)       # 髯ｦ・ｨ陞ｻ・､邵ｺ・ｮ闖ｴ諛・舞陝ｶ・ｯ繝ｻ繝ｻ..m, 郢ｧ・ｭ郢晢ｽ｣郢晏ｼｱ繝ｴ郢晢ｽｼ陷ｴ螢ｹ・√・繝ｻ
+                    # 繧ｳ繝ｳ繧ｻ繝励ヨ: 繝帙Ν繝峨ヵ繧｡繧ｹ繝茨ｼ域ｵｷ蠎穂ｻ倩ｿ托ｼ峨→繧ｭ繝｣繝弱ヴ繝ｼ・郁｡ｨ螻､・峨〒縺ｮ謐墓拷繧貞・縺代ｋ縲・
+                    kelp_band_m = 5.0          # 豬ｷ蠎戊ｿ大ｍ縺ｮ驩帷峩菴懃畑蟶ｯ・按ｱm, 繧・ｄ諡｡螟ｧ・・
+                    surface_band_m = 3.0       # 陦ｨ螻､縺ｮ菴懃畑蟶ｯ・・..m, 繧ｭ繝｣繝弱ヴ繝ｼ蜴壹ａ・・
                     kelp_band_px = kelp_band_m / meters_per_pixel
                     surface_band_px = surface_band_m / meters_per_pixel
                     within_band = abs(dy) <= kelp_band_px
                     near_surface = particle.y <= surface_band_px
                     horizontal_ok = abs(dx) <= plant.radius
-                    # 雎ｬ・ｷ陟取・・ｿ螟ｧ・・ 陞ｳ謔溘・邵ｺ・ｪ陷企宦・ｾ繝ｻ繝ｻ AND 闖ｴ諛・舞陝ｶ・ｯ陷繝ｻ
-                    # 髯ｦ・ｨ陞ｻ・､陝ｶ・ｯ: 鬩ｩ蟶ｷ蟲ｩ髴肴辨螻ｬ邵ｺ・ｯ闕ｳ讎頑牒邵ｲ竏ｵ・ｰ・ｴ陝ｷ・ｳ陷企宦・ｾ繝ｻ繝ｻ邵ｺ・ｧ邵ｺ繧・ｽ檎ｸｺ・ｰ陷ｷ・ｸ陷ｿ荳ｻ蠎・・蛹ｻ縺冗ｹ晢ｽ｣郢晏ｼｱ繝ｴ郢晢ｽｼ繝ｻ繝ｻ
+                    # 豬ｷ蠎戊ｿ大ｍ: 螳悟・縺ｪ蜊雁ｾ・・ AND 菴懃畑蟶ｯ蜀・
+                    # 陦ｨ螻､蟶ｯ: 驩帷峩霍晞屬縺ｯ荳榊撫縲∵ｰｴ蟷ｳ蜊雁ｾ・・縺ｧ縺ゅｌ縺ｰ蜷ｸ蜿主庄・医く繝｣繝弱ヴ繝ｼ・・
                     allowed = (within_radius and within_band) or (horizontal_ok and near_surface)
                 else:
                     if name in ("Spartina alterniflora", "Rhizophora spp."):
-                        # 雋趣ｽｮ鬮｢轣假ｽｸ・ｯ: 髯ｦ・ｨ陞ｻ・､郢晢ｽｻ陷企宦・ｾ繝ｻ繝ｻ邵ｺ・ｯ陋溷揃・｣諛ｷ蝟ｧ邵ｺ蜉ｱﾂ竏晉ｲｾ陷ｿ蜿厄ｽｯ譁絶・鬨ｾ・｣驍ｯ螢ｹ縺皮ｹ晢ｽｼ郢晏現・定ｬ怜ｸ呻ｿ郢ｧ繝ｻ
+                        # 貎ｮ髢灘ｸｯ: 陦ｨ螻､繝ｻ蜊雁ｾ・・縺ｯ蛟呵｣懷喧縺励∝精蜿取ｯ斐↓騾｣邯壹ご繝ｼ繝医ｒ謗帙￠繧・
                         shallow_ok = particle.y <= intertidal_shallow_band_px
                         allowed = shallow_ok and within_radius
                     else:
-                        # 闕ｳﾂ髣奇ｽｬ邵ｺ・ｮ雎ｬ・ｷ髣輔・ 陷企宦・ｾ繝ｻ繝ｻ + 郢ｧ繝ｻ・・弱・・樣ｩｩ蟶ｷ蟲ｩ陝ｶ・ｯ繝ｻ謖会ｽｱ4 m繝ｻ繝ｻ
+                        # 荳闊ｬ縺ｮ豬ｷ闕・ 蜊雁ｾ・・ + 繧・ｄ蠎・＞驩帷峩蟶ｯ・按ｱ4 m・・
                         sg_band_m = 4.0
                         if name == "Zostera marina":
                             sg_band_m = 4.0
@@ -624,7 +614,7 @@ def run_simulation(
                         base_contact = (within_radius or swept_hit)
                         allowed = base_contact and (abs(dy) <= sg_band_px)
 
-                # 蜊倩ｪｿ諤ｧ菫晁ｨｼ: allowed 縺ｧ縺ゅｌ縺ｰ eligible/visited 繧ら悄縺ｫ縺吶ｋ
+                # 単調性保証: allowed であれば eligible/visited も真にする
                 if allowed:
                     eligible_flag = True
                     visited = True
@@ -633,7 +623,8 @@ def run_simulation(
                 if not allowed:
                     continue
 
-                # 遞ｮ蛻･縺ｮ荳矩剞蜉ｹ邇・ｒ驕ｩ逕ｨ・亥ｾｮ邏ｰ阯ｻ縺ｮ荳肴ｴｻ諤ｧ蛹門屓驕ｿ・・                eff_local = eff
+                # 種別の下限効率を適用（微細藻の不活性化回避）
+                eff_local = eff
                 if name in ("Chlorella vulgaris", "Nannochloropsis gaditana"):
                     eff_local = max(eff_local, float(microalgae_min_eff))
                 uptake_ratio = eff_local * getattr(plant, "absorption_efficiency", 1.0)
@@ -651,7 +642,7 @@ def run_simulation(
                     L = 1.0 / (1.0 + np.exp(-k * (t - center)))
                     factor = 1.0 + (float(eelgrass_mid_boost_factor) - 1.0) * float(L)
                     uptake_ratio *= float(factor)
-                # 雋趣ｽｮ鬮｢轣假ｽｸ・ｯ邵ｺ・ｮ鬨ｾ・｣驍ｯ螢ｹ縺皮ｹ晢ｽｼ郢晁肩・ｼ繝ｻ..1繝ｻ繝ｻ
+                # 貎ｮ髢灘ｸｯ縺ｮ騾｣邯壹ご繝ｼ繝茨ｼ・..1・・
                 if name in ("Spartina alterniflora", "Rhizophora spp."):
                     phase = 2.0 * np.pi * ((step % max(tidal_period_steps, 1)) / max(tidal_period_steps, 1))
                     submergence = 0.5 + 0.5 * np.sin(phase)
@@ -683,28 +674,28 @@ def run_simulation(
                     if uptake_ratio > 0.0 and random.random() < uptake_ratio:
                         candidates.append((plant, uptake_ratio))
 
-            # 2) 陋溷揃・｣諛岩ｲ霎滂ｽ｡邵ｺ莉｣・檎ｸｺ・ｰ邵ｺ譏ｴ繝ｻ邵ｺ・ｾ邵ｺ・ｾ隹ｿ荵昶・
+            # 2) 蛟呵｣懊′辟｡縺代ｌ縺ｰ縺昴・縺ｾ縺ｾ谿九☆
             if not candidates or particle.mass <= 1e-12:
                 if particle.mass > 1e-12:
                     remaining_particles.append(particle)
                 continue
 
-            # 3) 陷ｷ・ｸ陷ｿ蠑ｱ・定屐蜻ｵ・｣諞ｺ菫｣邵ｺ・ｧ隰也甥繝ｻ繝ｻ逎ｯ纃ｾ邵ｺ・ｿ=uptake_ratio繝ｻ繝ｻ
+            # 3) 蜷ｸ蜿弱ｒ蛟呵｣憺俣縺ｧ謖牙・・磯㍾縺ｿ=uptake_ratio・・
             total_u = sum(u for _, u in candidates)
             if total_u <= 1e-12:
                 remaining_particles.append(particle)
                 continue
 
-            # 驍願ｲ橸ｽｭ闊個ｰ郢ｧ迚呻ｽｼ霈披ｳ隰壽㈱・･驍ｱ蝓弱詐邵ｺ・ｯ "驍願ｲ橸ｽｭ蜊・ｳ・ｪ鬩･繝ｻ・・・min(total_u, 1)"
+            # 邊貞ｭ舌°繧牙ｼ輔″謚懊￥邱城㍼縺ｯ "邊貞ｭ占ｳｪ驥・ﾃ・min(total_u, 1)"
             take_total = particle.mass * min(total_u, 1.0)
-            # 陷ｷ繝ｻﾂ蜻ｵ・｣諛岩・邵ｺ・ｮ鬩滓ｦ翫・
+            # 蜷・呵｣懊∈縺ｮ驟榊・
             for plant, u in candidates:
                 share = (u / total_u) * take_total
                 if share <= 0.0:
                     continue
                 absorbed, fixed, growth = plant.absorb(share)
                 debug_hits[plant.name]["absorptions"] += 1
-                # plant.absorb 邵ｺ・ｯ share 郢ｧ蛛ｵ笳守ｸｺ・ｮ邵ｺ・ｾ邵ｺ・ｾ雎ｸ驛・ｽｲ・ｻ邵ｺ蜷ｶ・玖恆閧ｴ鄂ｲ繝ｻ莠包ｽｿ譎擾ｽｭ莨懈抄繝ｻ蟲ｨﾂ繝ｻ
+                # plant.absorb 縺ｯ share 繧偵◎縺ｮ縺ｾ縺ｾ豸郁ｲｻ縺吶ｋ蜑肴署・井ｿ晏ｭ伜援・峨・
                 step_absorbed += absorbed
                 step_fixed += fixed
                 step_growth += growth
@@ -727,7 +718,7 @@ def run_simulation(
                 remaining_particles.append(particle)
 
         particles = np.array(remaining_particles, dtype=object)
-        # 郢ｧ・ｹ郢昴・繝｣郢晉､ｼ・ｵ繧会ｽｫ・ｯ邵ｺ・ｧ髫ｪ・ｺ隴・ｽｭ郢ｧ・ｷ郢晢ｽｪ郢晢ｽｼ郢ｧ・ｺ邵ｺ・ｫ髴托ｽｽ髫ｪ繝ｻ
+        # 繧ｹ繝・ャ繝礼ｵらｫｯ縺ｧ險ｺ譁ｭ繧ｷ繝ｪ繝ｼ繧ｺ縺ｫ霑ｽ險・
         if diag_enabled:
             for p in plants:
                 ds = debug_hits[p.name]
@@ -735,11 +726,11 @@ def run_simulation(
                 diag_series[p.name]["eligible"].append(int(ds["eligible"]))
                 diag_series[p.name]["absorptions"].append(int(ds["absorptions"]))
 
-        # 隴・ｽｰ髫穂ｹ暦ｽｵ竏昴・繝ｻ閧ｲ・ｭ迚吶・鬩滓誓・ｼ繝ｻ 隘搾ｽｷ雋・・ﾎ帷ｹ晏生ﾎ晁脂蛟･窶ｳ邵ｺ・ｧ雎包ｽｨ陷茨ｽ･邵ｺ蜉ｱﾂ竏ｫ・ｸ・ｦ郢ｧ・ｲ郢晢ｽｼ郢晏現繝ｻ隴帷甥譟題ｫ､・ｧ郢ｧ繧奇ｽｨ蝓滂ｽｸ・ｬ
+        # 譁ｰ隕乗ｵ∝・・育ｭ牙・驟搾ｼ・ 襍ｷ貅舌Λ繝吶Ν莉倥″縺ｧ豕ｨ蜈･縺励∫ｸｦ繧ｲ繝ｼ繝医・譛牙柑諤ｧ繧りｨ域ｸｬ
         num_new = seasonal_inflow(step, total_steps, base_mgC_per_step=inflow_mgC_per_step_base, particle_mass_mgC=particle_mass_mgC)
         if num_new > 0:
-            # 鬩･髦ｪ竏ｩ闔牙･・繝ｻ莠･・ｷ・ｦ髯ｦ・ｨ陞ｻ・､邵ｺ・ｫ30%郢ｧ蟶昴・陋ｻ繝ｻﾂ竏ｽ・ｻ謔ｶ繝ｻ陜ｮ繝ｻ・ｭ莨夲ｽｼ繝ｻ
-            weights = [0.30, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0]  # TODO: make configurable via CSV
+            # 驥阪∩莉倥￠・亥ｷｦ陦ｨ螻､縺ｫ30%繧帝・蛻・∽ｻ悶・蝮・ｭ会ｼ・
+            weights = [0.30, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0, 0.70 / 4.0]
             wsum = sum(weights) or 1.0
             ideal = [w / wsum * num_new for w in weights]
             counts = [int(x) for x in ideal]
@@ -757,11 +748,11 @@ def run_simulation(
                 lab = source_labels[si]
                 for _ in range(count):
                     sy_eff = sy + step * injection_drift_px_per_step
-                    sy_eff = sy + step * injection_drift_px_per_step
+                    sy_eff = max(0, min(sy_eff, height - 1))
                     x = sx + np.random.normal(scale=injection_sigma_px)
                     y = sy_eff + np.random.normal(scale=injection_sigma_px)
-                    if sy_eff < 0:
-                        sy_eff = max(0, min(sy_eff, height - 1))
+                    if 0 <= x < width and 0 <= y < height and terrain[int(y), int(x)] == 1:
+                        new_particles.append(Particle(x=x, y=y, mass=1.0, form="CO2", reactivity=1.0, origin=lab, x0=x, y0=y))
                         if diag_enabled:
                             inj_xy_rows.append([int(step), float(x), float(y), lab])
                         try:
@@ -784,7 +775,7 @@ def run_simulation(
         if gate_enabled and step == 0:
             assert_gate_effective(abs_dy_samples, min_median=min_median_abs_dy)
 
-        # 郢晏干ﾎ帷ｹ晢ｽｳ郢ｧ・ｯ郢晏現ﾎｦ繝ｻ繝ｻhlorella繝ｻ蟲ｨ繝ｻ髢ｾ・ｪ霎滂ｽｶ雎・ｽｻ闔・｡郢晢ｽｻ陷閧ｴ蜿幄怎・ｺ繝ｻ繝ｻO2陟包ｽｩ陝ｶ・ｰ繝ｻ繝ｻ
+        # 繝励Λ繝ｳ繧ｯ繝医Φ・・hlorella・峨・閾ｪ辟ｶ豁ｻ莠｡繝ｻ蜀肴叛蜃ｺ・・O2蠕ｩ蟶ｰ・・
         reinj_mgC_step = 0.0
         for plant in plants:
             if plant.name == "Chlorella vulgaris" and plant.total_growth > 0:
@@ -795,11 +786,12 @@ def run_simulation(
                 mortal = plant.total_growth * rate_t
                 if mortal > 0:
                     plant.total_growth -= mortal
-                    # mgC 郢ｧ蝣､・ｲ雋橸ｽｭ蜈育・邵ｺ・ｫ陞溽判驪､邵ｺ蜉ｱ窶ｻ邵ｲ竏壺落邵ｺ・ｮ陜｣・ｴ邵ｺ・ｫ陷閧ｴ・ｳ・ｨ陷茨ｽ･
+                    # mgC 繧堤ｲ貞ｭ先焚縺ｫ螟画鋤縺励※縲√◎縺ｮ蝣ｴ縺ｫ蜀肴ｳｨ蜈･
                     n_rel = int(round(mortal / max(particle_mass_mgC, 1e-9)))
-                    # 陷閧ｴ・ｳ・ｨ陷茨ｽ･邵ｺ・ｮ闕ｳ・ｸ郢ｧ竏ｬ・ｪ・､陝ｾ・ｮ繝ｻ繝ｻgC繝ｻ蟲ｨ・帝里繝ｻ・ｩ謳ｾ・ｼ螢ｽ・ｭ・｣髮具｣ｰ邵ｺ・ｩ邵ｺ・｡郢ｧ蟲ｨ・り愾謔ｶ・顔ｸｺ繝ｻ・・                    loss_quant_mgC += float(mortal) - float(n_rel) * float(particle_mass_mgC)
+                    # 蜀肴ｳｨ蜈･縺ｮ荳ｸ繧∬ｪ､蟾ｮ・・gC・峨ｒ闢・ｩ搾ｼ壽ｭ｣雋縺ｩ縺｡繧峨ｂ蜿悶ｊ縺・ｋ
+                    loss_quant_mgC += float(mortal) - float(n_rel) * float(particle_mass_mgC)
                     if n_rel > 0:
-                        # 邵ｺ譏ｴ繝ｻ陜｣・ｴ邵ｺ・ｫ隘搾ｽｷ雋・・ﾎ帷ｹ晏生ﾎ晁脂蛟･窶ｳ邵ｺ・ｧ陷閧ｴ・ｳ・ｨ陷茨ｽ･繝ｻ繝ｻrigin="reinj_<plant>")
+                        # 縺昴・蝣ｴ縺ｫ襍ｷ貅舌Λ繝吶Ν莉倥″縺ｧ蜀肴ｳｨ蜈･・・rigin="reinj_<plant>")
                         from .models.particle import Particle
                         added_rel = 0
                         for _ in range(n_rel):
@@ -819,7 +811,7 @@ def run_simulation(
                         reinj_mgC_step += reinj_mgC
                         mass_inflow += reinj_mgC
 
-        # 郢ｧ・ｹ郢昴・繝｣郢晉軸蠢ｰ邵ｺ・ｮ髮会ｽｪ鬩･荳茨ｽｿ譎擾ｽｭ蛟･繝｡郢ｧ・ｧ郢昴・縺代・莠包ｽｻ・ｻ隲｢謫ｾ・ｼ繝ｻ
+        # 繧ｹ繝・ャ繝玲忰縺ｮ雉ｪ驥丈ｿ晏ｭ倥メ繧ｧ繝・け・井ｻｻ諢擾ｼ・
         if debug_mass_check:
             curr_particles_mass_mgC = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
             absorbed_mgC_step = float(step_absorbed) * float(particle_mass_mgC)
@@ -830,9 +822,9 @@ def run_simulation(
             denom = max(left, right, 1.0)
             rel_err = abs(left - right) / denom
             if rel_err > 1e-6:
-                print(f"[mass-check] step={step} rel_err={rel_err:.3e} (prev={prev_particles_mass_mgC:.4f}, inflow={inflow_total_step:.4f}, outflow={outflow_mgC_step:.4f}, absorbed={absorbed_mgC_step:.4f}, quant・弱・{quant_delta_mgC:.4f}, curr={curr_particles_mass_mgC:.4f})")
+                print(f"[mass-check] step={step} rel_err={rel_err:.3e} (prev={prev_particles_mass_mgC:.4f}, inflow={inflow_total_step:.4f}, outflow={outflow_mgC_step:.4f}, absorbed={absorbed_mgC_step:.4f}, quantﾎ・{quant_delta_mgC:.4f}, curr={curr_particles_mass_mgC:.4f})")
 
-        # 陷ｿ・ｯ髫暮摩蝟ｧ繝ｻ莠包ｽｻ・ｻ隲｢繝ｻ郢晢ｽｩ郢ｧ・､郢晏私・ｼ繝ｻ
+        # 蜿ｯ隕門喧・井ｻｻ諢・繝ｩ繧､繝厄ｼ・
         if live_plot_interval > 0 and (step % live_plot_interval == 0):
             fig, ax = plt.subplots(figsize=(6, 4))
             ax.set_facecolor("#d0f7ff")
@@ -840,11 +832,11 @@ def run_simulation(
                 rx, ry, rw, rh = rock["x"], rock["y"], rock["w"], rock["h"]
                 rock_patch = plt.Rectangle((rx - rw / 2, ry - rh / 2), rw, rh, color="gray", alpha=0.7)
                 ax.add_patch(rock_patch)
-            # 隶蜥ｲ鮟・ｸｺ・ｮ闖ｴ蜥ｲ・ｽ・ｮ
+            # 讀咲黄縺ｮ菴咲ｽｮ
             for plant in plants:
                 circ = plt.Circle((plant.x, plant.y), plant.radius, color="green", alpha=0.3)
                 ax.add_patch(circ)
-            # 驍願ｲ橸ｽｭ繝ｻ
+            # 邊貞ｭ・
             if len(particles) > 0:
                 ax.scatter([p.x for p in particles], [p.y for p in particles], c="cyan", s=5)
             ax.set_xlim(0, width)
@@ -859,32 +851,32 @@ def run_simulation(
                 plt.pause(0.01)
             plt.close(fig)
 
-        # 陷ｷ驛・ｽｨ莠･ﾂ・､
+        # 蜷郁ｨ亥､
         carbon_series.append(sum(p.total_fixed for p in plants))
         internal_series.append(sum(p.total_growth for p in plants))
         fixed_series.append(sum(p.total_fixed for p in plants))
         released_series.append(0)
 
-        # 郢ｧ・ｹ郢昴・繝｣郢晏干・・ｸｺ・ｨ邵ｺ・ｮ陷ｷ驛・ｽｨ蛹ｻ・帝坎蛟ｬ鮖ｸ
+        # 繧ｹ繝・ャ繝励＃縺ｨ縺ｮ蜷郁ｨ医ｒ險倬鹸
         step_absorbed_series.append(step_absorbed)
         step_fixed_series.append(step_fixed)
         step_growth_series.append(step_growth)
         particle_count_series.append(int(len(particles)))
 
-        # 驕橸ｽｮ邵ｺ譁絶・邵ｺ・ｮ驍擾ｽｯ驕ｨ髦ｪ・帝坎蛟ｬ鮖ｸ
+        # 遞ｮ縺斐→縺ｮ邏ｯ遨阪ｒ險倬鹸
         for plant in plants:
             series = species_series[plant.name]
             series["total_absorbed"].append(plant.total_absorbed)
             series["total_fixed"].append(plant.total_fixed)
             series["total_growth"].append(plant.total_growth)
 
-    # ===== 驍ｨ蜈域｣｡鬮ｮ繝ｻ・ｨ繝ｻ=====
+    # ===== 邨先棡髮・ｨ・=====
     species_fixed_totals = {plant.name: (plant.total_fixed * float(particle_mass_mgC)) for plant in plants}
-    print("\n=== 陷ｷ驛・ｽｨ莠･蟠玖楜蜥ｾO2鬩･謫ｾ・ｼ蝓滂ｽ､蜥ｲ鮟・◇・ｮ陋ｻ・･繝ｻ繝ｻ===")
+    print("\n=== 蜷郁ｨ亥崋螳咾O2驥擾ｼ域､咲黄遞ｮ蛻･・・===")
     for species, total_mgC in species_fixed_totals.items():
         print(f"{species}: {total_mgC:.2f} mgC")
 
-    # 髮会ｽｪ鬩･荳槫ｺｶ隰ｾ・ｯ郢昶・縺臥ｹ昴・縺代・莠･繝ｻ隴帶ｻゑｽｼ蛹ｺ・ｵ竏昴・繝ｻ譎・ｽｮ遏ｩ纃ｼ繝ｻ蛹ｺ・ｵ竏昴・繝ｻ繝ｻ
+    # 雉ｪ驥丞庶謾ｯ繝√ぉ繝・け・亥・譛滂ｼ区ｵ∝・・晄ｮ矩㍼・区ｵ∝・・・
     current_particle_mass = (float(sum(p.mass for p in particles)) if len(particles) > 0 else 0.0) * float(particle_mass_mgC)
     plant_absorbed = float(sum(p.total_absorbed for p in plants)) * float(particle_mass_mgC)
     plant_fixed = float(sum(p.total_fixed for p in plants)) * float(particle_mass_mgC)
@@ -893,7 +885,7 @@ def run_simulation(
     total_outflow = float(mass_outflow)
     total_remaining = float(current_particle_mass + plant_absorbed + loss_quant_mgC)
 
-    # 陷ｿ蜿夜ｫｪ髫ｱ・､陝ｾ・ｮ郢ｧ蝣､・ｮ諤懊・邵ｺ蜉ｱ窶ｻ髯ｦ・ｨ驕会ｽｺ繝ｻ繝ｻgC陷雁・ｽｽ謳ｾ・ｼ繝ｻ
+    # 蜿取髪隱､蟾ｮ繧堤ｮ怜・縺励※陦ｨ遉ｺ・・gC蜊倅ｽ搾ｼ・
     balance_error = 0.0 if total_injected <= 1e-9 else abs(total_injected - (total_remaining + total_outflow)) / total_injected
     print(
         f"Mass balance: Injected={total_injected:.2f} mgC, "
@@ -902,10 +894,10 @@ def run_simulation(
         f"Quantization={loss_quant_mgC:.2f} mgC, Error={balance_error*100:.2f}%"
     )
 
-    # 驍ｨ蜈域｣｡CSV闖ｫ譎擾ｽｭ蛛・ｽｼ蛹ｻ縺礼ｹ晄ｧｭﾎ・& 驕橸ｽｮ陋ｻ・･邵ｺ譁絶・邵ｺ・ｮ隴弱ｉ・ｳ・ｻ陋ｻ繝ｻ郢ｧ・ｵ郢晄ｧｭﾎ懊・繝ｻ
+    # 邨先棡CSV菫晏ｭ假ｼ医し繝槭Μ & 遞ｮ蛻･縺斐→縺ｮ譎らｳｻ蛻・繧ｵ繝槭Μ・・
     os.makedirs("results", exist_ok=True)
 
-    # 隴鯉ｽｧ闔蜻磯共: 陷ｷ繝ｻ・ｨ・ｮ邵ｺ・ｮ陷ｷ驛・ｽｨ闌ｨ・ｼ繝ｻ髯ｦ髱ｴSV繝ｻ繝ｻ
+    # 譌ｧ莠呈鋤: 蜷・ｨｮ縺ｮ蜷郁ｨ茨ｼ・陦靴SV・・
     for plant in plants:
         slug = _slugify(plant.name)
         mgc_path = os.path.join("results", f"result_{slug}_mgC.csv")
@@ -917,7 +909,7 @@ def run_simulation(
                 plant.total_fixed * float(particle_mass_mgC),
                 plant.total_growth * float(particle_mass_mgC),
             ])
-        # index 諠・ｱ繧定塘遨搾ｼ亥錐遘ｰ/繧ｹ繝ｩ繝・げ/繝輔ぃ繧､繝ｫ繝代せ・・        
+        # index 情報を蓄積（名称/スラッグ/ファイルパス）
         index_rows.append([
             plant.name,
             slug,
@@ -925,7 +917,7 @@ def run_simulation(
             f"time_series_{slug}_mgC.csv",
         ])
 
-    # 隴・ｽｰ: 陷茨ｽｨ闖ｴ阮吶＠郢晄ｧｭﾎ・    with open(os.path.join("results", "summary_totals.csv"), "w", newline="") as f:
+    # 譁ｰ: 蜈ｨ菴薙し繝槭Μ
     with open(os.path.join("results", "summary_totals.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["species", "total_absorbed_mgC", "total_fixed_mgC", "total_growth_mgC"])
@@ -937,7 +929,7 @@ def run_simulation(
                 plant.total_growth * float(particle_mass_mgC),
             ])
 
-    # 隴・ｽｰ: 陷茨ｽｨ闖ｴ阮吶・隴弱ｉ・ｳ・ｻ陋ｻ繝ｻ
+    # 譁ｰ: 蜈ｨ菴薙・譎らｳｻ蛻・
     with open(os.path.join("results", "overall_timeseries.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
@@ -964,7 +956,7 @@ def run_simulation(
                 internal_series[i] if i < len(internal_series) else 0.0,
             ])
 
-    # 隴・ｽｰ: 驕橸ｽｮ陋ｻ・･邵ｺ譁絶・邵ｺ・ｮ隴弱ｉ・ｳ・ｻ陋ｻ證ｦ・ｼ閧ｲ・ｴ・ｯ驕ｨ謳ｾ・ｼ繝ｻ
+    # 譁ｰ: 遞ｮ蛻･縺斐→縺ｮ譎らｳｻ蛻暦ｼ育ｴｯ遨搾ｼ・
     for name, series in species_series.items():
         slug = _slugify(name)
         out_path = os.path.join("results", f"time_series_{slug}.csv")
@@ -978,7 +970,7 @@ def run_simulation(
                     series["total_fixed"][i],
                     series["total_growth"][i],
                 ])
-        # mgC郢ｧ・ｹ郢ｧ・ｱ郢晢ｽｼ郢晢ｽｫ邵ｺ・ｮ闕ｳ・ｦ髯ｦ謔溘・陷峨・
+        # mgC繧ｹ繧ｱ繝ｼ繝ｫ縺ｮ荳ｦ陦悟・蜉・
         out_path_mgc = os.path.join("results", f"time_series_{slug}_mgC.csv")
         with open(out_path_mgc, "w", newline="") as f:
             writer = csv.writer(f)
@@ -991,7 +983,8 @@ def run_simulation(
                 series["total_growth"][i] * float(particle_mass_mgC),
             ])
 
-    # 繧､繝ｳ繝・ャ繧ｯ繧ｹ・医←縺ｮ繝輔ぃ繧､繝ｫ繧定ｦ九ｌ縺ｰ繧医＞縺九ｒ荳隕ｧ蛹厄ｼ・    try:
+    # インデックス（どのファイルを見ればよいかを一覧化）
+    try:
         with open(os.path.join("results", "index.csv"), "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["species", "slug", "summary_file_mgC", "timeseries_file_mgC"])
@@ -1019,75 +1012,9 @@ def run_simulation(
     except Exception as e:
         print(f"[warn] write all_species_timeseries failed: {e}")
 
-    # Consolidated per-species cumulative fixed mgC timeseries
+    # 蝗ｳ縺ｮ菫晏ｭ假ｼ郁ｦ九ｄ縺吶＞蜿ｯ隕門喧・・
     try:
-        os.makedirs("results", exist_ok=True)
-        fix_path = os.path.join("results", "all_species_fixation_timeseries.csv")
-        species_names = list(species_series.keys())
-        with open(fix_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["step"] + species_names)
-            for i in range(total_steps):
-                row = [i]
-                for name in species_names:
-                    val = 0.0
-                    if i < len(species_series[name]["total_fixed"]):
-                        val = float(species_series[name]["total_fixed"][i]) * float(particle_mass_mgC)
-                    row.append(val)
-                writer.writerow(row)
-    except Exception as e:
-        print(f"[warn] write all_species_fixation_timeseries failed: {e}")
-
-    # Optional permanence (decay of fixed pool) timeseries
-    try:
-        permanence_enabled = bool(cfg.get("permanence_enabled", True))
-        if permanence_enabled:
-            default_half_life = {
-                "Zostera marina": 300,
-                "Halophila ovalis": 250,
-                "Posidonia oceanica": 350,
-                "Macrocystis pyrifera": 120,
-                "Saccharina japonica": 120,
-                "Chlorella vulgaris": 15,
-                "Nannochloropsis gaditana": 15,
-                "Spartina alterniflora": 600,
-                "Rhizophora spp.": 1000,
-            }
-            def _half_life_for(name: str) -> float:
-                slug = _slugify(name)
-                key = f"half_life_{slug}_steps"
-                try:
-                    return float(cfg.get(key, default_half_life.get(name, 300)))
-                except Exception:
-                    return float(default_half_life.get(name, 300))
-            perm_ts = {name: [0.0] * total_steps for name in species_series.keys()}
-            for name, series in species_series.items():
-                hl = max(_half_life_for(name), 1.0)
-                lam = float(np.log(2.0) / hl)
-                prev = 0.0
-                last_cum = 0.0
-                for i in range(total_steps):
-                    cum = float(series["total_fixed"][i]) * float(particle_mass_mgC)
-                    inc = cum - last_cum if i > 0 else cum
-                    if inc < 0:
-                        inc = 0.0
-                    prev = prev * (1.0 - lam) + inc
-                    perm_ts[name][i] = prev
-                    last_cum = cum
-            perm_path = os.path.join("results", "all_species_permanence_timeseries.csv")
-            with open(perm_path, "w", newline="") as f:
-                writer = csv.writer(f)
-                names = list(species_series.keys())
-                writer.writerow(["step"] + names)
-                for i in range(total_steps):
-                    row = [i] + [perm_ts[n][i] for n in names]
-                    writer.writerow(row)
-    except Exception as e:
-        print(f"[warn] permanence timeseries failed: {e}")
-
-    # 陜暦ｽｳ邵ｺ・ｮ闖ｫ譎擾ｽｭ蛛・ｽｼ驛・ｽｦ荵晢ｽ・ｸｺ蜷ｶ・櫁愾・ｯ髫暮摩蝟ｧ繝ｻ繝ｻ
-    try:
-        # 1) 驕橸ｽｮ陋ｻ・･邵ｺ譁絶・邵ｺ・ｮ陷ｷ驛・ｽｨ闌ｨ・ｼ蝓滂ｽ｣蛛ｵ縺堤ｹ晢ｽｩ郢晏桁・ｼ蟲ｨﾂ繧・・闖ｴ髦ｪ繝ｻ mgC 邵ｺ・ｫ驍ｨ・ｱ闕ｳﾂ
+        # 1) 遞ｮ蛻･縺斐→縺ｮ蜷郁ｨ茨ｼ域｣偵げ繝ｩ繝包ｼ峨ょ腰菴阪・ mgC 縺ｫ邨ｱ荳
         species_fixed_totals_mgC = {p.name: (p.total_fixed * float(particle_mass_mgC)) for p in plants}
         fig, ax = plt.subplots(figsize=(10, 5))
         species = list(species_fixed_totals_mgC.keys())
@@ -1103,7 +1030,7 @@ def run_simulation(
         plt.savefig(os.path.join("results", "total_fixed_by_species.png"))
         plt.close(fig)
 
-        # 2) 陷茨ｽｨ闖ｴ阮吶・隴弱ｉ・ｳ・ｻ陋ｻ證ｦ・ｼ繝ｻ郢ｧ・ｹ郢昴・繝｣郢晏干竕邵ｺ貅假ｽ翫・繝ｻ
+        # 2) 蜈ｨ菴薙・譎らｳｻ蛻暦ｼ・繧ｹ繝・ャ繝励≠縺溘ｊ・・
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(np.asarray(step_absorbed_series, dtype=float) * float(particle_mass_mgC), label="absorbed/step [mgC]")
         ax.plot(np.asarray(step_fixed_series, dtype=float) * float(particle_mass_mgC), label="fixed/step [mgC]")
@@ -1116,7 +1043,8 @@ def run_simulation(
         plt.savefig(os.path.join("results", "overall_timeseries.png"))
         plt.close(fig)
 
-        # 3) 莉｣陦ｨ3遞ｮ縺ｮ邏ｯ遨搾ｼ育ｷ夲ｼ・        fig, ax = plt.subplots(figsize=(10, 5))
+        # 3) 莉｣陦ｨ3遞ｮ縺ｮ邏ｯ遨搾ｼ育ｷ夲ｼ・
+        fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(np.asarray(zostera_fixed_series, dtype=float) * float(particle_mass_mgC), label="Zostera marina (fixed)")
         ax.plot(np.asarray(kelp_fixed_series, dtype=float) * float(particle_mass_mgC), label="Macrocystis pyrifera (fixed)")
         ax.plot(np.asarray(chlorella_fixed_series, dtype=float) * float(particle_mass_mgC), label="Chlorella vulgaris (fixed)")
@@ -1128,7 +1056,8 @@ def run_simulation(
         plt.savefig(os.path.join("results", "selected_species_cumulative_fixed.png"))
         plt.close(fig)
 
-        # 4) 蜈ｨ遞ｮ縺ｮ邏ｯ遨榊精蜿朱㍼・亥推遞ｮ・・        fig, ax = plt.subplots(figsize=(10, 6))
+        # 4) 蜷・ｨｮ縺ｮ邏ｯ遨榊精蜿朱㍼・亥・9遞ｮ・・
+        fig, ax = plt.subplots(figsize=(10, 6))
         for name, series in species_series.items():
             vals = np.asarray(series["total_absorbed"], dtype=float) * float(particle_mass_mgC)
             ax.plot(vals, label=name)
@@ -1138,18 +1067,6 @@ def run_simulation(
         ax.legend()
         plt.tight_layout()
         plt.savefig(os.path.join("results", "all_species_absorption.png"))
-        plt.close(fig)
-
-        # 5) 蜈ｨ遞ｮ縺ｮ邏ｯ遨榊崋螳夐㍼・亥推遞ｮ・・        fig, ax = plt.subplots(figsize=(10, 6))
-        for name, series in species_series.items():
-            vals = np.asarray(series["total_fixed"], dtype=float) * float(particle_mass_mgC)
-            ax.plot(vals, label=name)
-        ax.set_xlabel("Step")
-        ax.set_ylabel("Fixed CO2 [mgC]")
-        ax.set_title("CO2 Fixation Over Time")
-        ax.legend()
-        plt.tight_layout()
-        plt.savefig(os.path.join("results", "all_species_fixation.png"))
         plt.close(fig)
     except Exception as e:
         print(f"[warn] Plotting failed: {e}")
@@ -1164,7 +1081,7 @@ def run_simulation(
                 path = os.path.join("outputs/diagnostics", f"species_diag_{slug}.csv")
                 with open(path, "w", newline="") as f:
                     w = csv.writer(f)
-                    w.writerow(["step", "visits", "eligible", "absorptions"])  # eff0陷繝ｻ・ｨ・ｳ邵ｺ・ｯ陟｢繝ｻ・ｦ竏ｵ蜃ｾ邵ｺ・ｫ髴托ｽｽ陷会｣ｰ
+                    w.writerow(["step", "visits", "eligible", "absorptions"])  # eff0蜀・ｨｳ縺ｯ蠢・ｦ∵凾縺ｫ霑ｽ蜉
                     steps = range(total_steps)
                     vs = diag_series[name]["visits"] if name in diag_series else []
                     es = diag_series[name]["eligible"] if name in diag_series else []
@@ -1230,21 +1147,21 @@ def run_simulation(
 
 def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.0):
     """
-    陷雁･縺帷ｹ昴・繝｣郢晁挙・ｩ遨ゑｽｾ・｡繝ｻ莠包ｽｸ・ｻ邵ｺ・ｫ郢昴・縺帷ｹ晁ご逡代・蟲ｨﾂ繝ｻ
-    plants: dict繝ｻ莠･謗ｨ驕橸ｽｮ邵ｺ・ｮ郢昜ｻ｣ﾎ帷ｹ晢ｽ｡郢晢ｽｼ郢ｧ・ｿ邵ｲ繝ｻSON邵ｺ・ｮ郢ｧ・ｭ郢晢ｽｼ陷ｷ髦ｪ竊楢惺蛹ｻ・冗ｸｺ蟶呻ｽ九・繝ｻ
-    co2: 邵ｺ阮吶・郢ｧ・ｹ郢昴・繝｣郢晏干縲帝圦遨ゑｽｾ・｡陝・ｽｾ髮趣ｽ｡邵ｺ・ｫ闕ｳ蠑ｱ竏ｴ郢ｧ迢励￥驍擾｣ｰ鬩･謫ｾ・ｼ莠･驟碑叉ﾂ陷雁・ｽｽ髦ｪ縲偵・繝ｻ
+    蜊倥せ繝・ャ繝苓ｩ穂ｾ｡・井ｸｻ縺ｫ繝・せ繝育畑・峨・
+    plants: dict・亥推遞ｮ縺ｮ繝代Λ繝｡繝ｼ繧ｿ縲・SON縺ｮ繧ｭ繝ｼ蜷阪↓蜷医ｏ縺帙ｋ・・
+    co2: 縺薙・繧ｹ繝・ャ繝励〒隧穂ｾ｡蟇ｾ雎｡縺ｫ荳弱∴繧狗く邏驥擾ｼ亥酔荳蜊倅ｽ阪〒・・
     """
     results = {}
     nutrient_series = []
 
-    # 騾ｶ・ｸ陝・ｽｾ鬩滓ｦ翫・邵ｺ・ｮ邵ｺ貅假ｽ∫ｸｲ竏晄耳驕橸ｽｮ邵ｺ・ｮ鬩･髦ｪ竏ｩ繝ｻ繝ｻbsorption_rate 邵ｺ・ｾ邵ｺ貅倥・ absorption_efficiency繝ｻ蟲ｨ・定惺驛・ｽｨ繝ｻ
+    # 逶ｸ蟇ｾ驟榊・縺ｮ縺溘ａ縲∝推遞ｮ縺ｮ驥阪∩・・bsorption_rate 縺ｾ縺溘・ absorption_efficiency・峨ｒ蜷郁ｨ・
     total_abs_rate = 0.0
     for _name, _params in plants.items():
         total_abs_rate += float(_params.get("absorption_rate", _params.get("absorption_efficiency", 1.0)))
-    total_abs_rate = max(total_abs_rate, 1e-9)  # 0陷托ｽｲ鬮ｦ・ｲ雎・ｽ｢
+    total_abs_rate = max(total_abs_rate, 1e-9)  # 0蜑ｲ髦ｲ豁｢
 
-    step_abs_total = 0.0   # 邵ｺ阮吶・郢ｧ・ｹ郢昴・繝｣郢晏干縲堤ｸｺ・ｮ驍ｱ荳樒ｲｾ陷ｿ繝ｻ
-    step_fix_total = 0.0   # 邵ｺ阮吶・郢ｧ・ｹ郢昴・繝｣郢晏干縲堤ｸｺ・ｮ驍ｱ荳槫ｴ玖楜繝ｻ
+    step_abs_total = 0.0   # 縺薙・繧ｹ繝・ャ繝励〒縺ｮ邱丞精蜿・
+    step_fix_total = 0.0   # 縺薙・繧ｹ繝・ャ繝励〒縺ｮ邱丞崋螳・
 
     for plant_name, params in plants.items():
         x = params.get("x", 0)
@@ -1266,13 +1183,13 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
 
         efficiency = float(temp_eff) * float(light_eff) * float(sal_eff)
 
-        # JSON邵ｺ・ｮ郢ｧ・ｭ郢晢ｽｼ陷ｷ髦ｪ竊楢惺蛹ｻ・冗ｸｺ蟶呻ｽ九・閧ｲ蠍瑚汞・ｾ鬩滓ｦ翫・繝ｻ繝ｻ
+        # JSON縺ｮ繧ｭ繝ｼ蜷阪↓蜷医ｏ縺帙ｋ・育嶌蟇ｾ驟榊・・・
         weight   = float(params.get("absorption_rate", params.get("absorption_efficiency", 1.0)))
         share    = weight / total_abs_rate
         fix_rate = params.get("fixation_rate", params.get("fixation_ratio", 0.7))
         growth_r = params.get("growth_rate", 0.0)
 
-        # 邵ｺ譏ｴ繝ｻ驕橸ｽｮ邵ｺ・ｮ陷ｷ・ｸ陷ｿ譛ｱ纃ｼ = 邵ｺ阮吶・郢ｧ・ｹ郢昴・繝｣郢晏干繝ｻCO2 ・・・陷会ｽｹ驍・・・・・騾ｶ・ｸ陝・ｽｾ郢ｧ・ｷ郢ｧ・ｧ郢ｧ・｢
+        # 縺昴・遞ｮ縺ｮ蜷ｸ蜿朱㍼ = 縺薙・繧ｹ繝・ャ繝励・CO2 ﾃ・蜉ｹ邇・ﾃ・逶ｸ蟇ｾ繧ｷ繧ｧ繧｢
         absorbed = float(co2) * float(efficiency) * float(share)
         fixed = absorbed * float(fix_rate)
         growth = float(growth_r) * absorbed
@@ -1289,7 +1206,7 @@ def simulate_step(plants, step, total_steps=150, width=100, height=100, co2=100.
             "env": env,
         }
 
-    # 邵ｺ阮吶・郢ｧ・ｹ郢昴・繝｣郢晄懊・邵ｺ・ｮ陷ｷ驛・ｽｨ蛹ｻ・る恆譁絶・繝ｻ莠･蠎ｶ隰ｾ・ｯ鬮ｮ繝ｻ・ｨ閧ｲ逡代・繝ｻ
+    # 縺薙・繧ｹ繝・ャ繝怜・縺ｮ蜷郁ｨ医ｂ霑斐☆・亥庶謾ｯ髮・ｨ育畑・・
     return results, nutrient_series, step_abs_total, step_fix_total
 
 if __name__ == "__main__":
@@ -1298,19 +1215,16 @@ if __name__ == "__main__":
     parser.add_argument("--pref1", action="store_true", help="Run 1-step preflight visualization and exit")
     args = parser.parse_args()
     run_simulation(pref1=bool(args.pref1))
-    # 鬮ｱ讚・ｽ｡・ｨ驕会ｽｺ郢晢ｽ｢郢晢ｽｼ郢晏ｳｨ縲堤ｸｺ・ｯ鬮ｱ讒ｫ・ｯ・ｾ髫ｧ・ｱ郢晁・繝｣郢ｧ・ｯ郢ｧ・ｨ郢晢ｽｳ郢昜ｼ夲ｽｼ繝ｻI/郢ｧ・ｵ郢晢ｽｼ郢晁・繝ｻ陷ｷ莉｣・繝ｻ繝ｻ
+    # 髱櫁｡ｨ遉ｺ繝｢繝ｼ繝峨〒縺ｯ髱槫ｯｾ隧ｱ繝舌ャ繧ｯ繧ｨ繝ｳ繝会ｼ・I/繧ｵ繝ｼ繝舌・蜷代￠・・
     try:
         if not show_plots:
             plt.switch_backend("Agg")
     except Exception:
         pass
 
-    # 郢晢ｽｩ郢晢ｽｳ邵ｺ譁絶・邵ｺ・ｫ隰ｾ・ｯ鬩溷調邏ｫ郢ｧ・ｬ郢晢ｽｼ郢晁・諞ｾ隲ｷ荵晢ｽ堤ｹ晢ｽｪ郢ｧ・ｻ郢昴・繝ｨ
+    # 繝ｩ繝ｳ縺斐→縺ｫ謾ｯ驟咲紫繧ｬ繝ｼ繝臥憾諷九ｒ繝ｪ繧ｻ繝・ヨ
     try:
         _dom_state.clear()
     except Exception:
         pass
-
-
-
 
