@@ -1,0 +1,10 @@
+species,visits_sum,eligible_sum,absorptions_sum,P(abs|eligible),plateau_step
+Nannochloropsis gaditana,142200,185,185,1.0,134
+Macrocystis pyrifera,142200,12486,12403,0.9933525548614448,136
+Rhizophora spp.,142200,2382,2382,1.0,129
+Zostera marina,142200,14,14,1.0,149
+Halophila ovalis,142200,30,30,1.0,148
+Saccharina japonica,142200,8451,8404,0.9944385279848539,127
+Chlorella vulgaris,142200,0,0,0.0,-1
+Posidonia oceanica,142200,1773,1756,0.9904117315284828,143
+Spartina alterniflora,142200,2649,2649,1.0,129

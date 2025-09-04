@@ -1,0 +1,12 @@
+level,species,code,details,suggestion
+WARN,Nannochloropsis gaditana,two_stage_gate_weak,P(abs|eligible)=1.000,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Macrocystis pyrifera,two_stage_gate_weak,P(abs|eligible)=0.993,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Rhizophora spp.,two_stage_gate_weak,P(abs|eligible)=1.000,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Zostera marina,two_stage_gate_weak,P(abs|eligible)=1.000,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Halophila ovalis,two_stage_gate_weak,P(abs|eligible)=1.000,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Saccharina japonica,two_stage_gate_weak,P(abs|eligible)=0.994,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+FAIL,Chlorella vulgaris,zero_capture,"eligible=0, absorptions=0",Check radius/layer/eff; for microalgae raise plankton_capture_radius_m to 2.5–3.0 and set microalgae_min_eff to 0.10–0.20
+WARN,Posidonia oceanica,two_stage_gate_weak,P(abs|eligible)=0.990,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+WARN,Spartina alterniflora,two_stage_gate_weak,P(abs|eligible)=1.000,Increase eligible_radius 1.5x; set min_contact_steps to 2–3; apply probabilistic efficiency
+FAIL,Chlorella vulgaris,microalgae_zero,"eligible=0, absorptions=0",Increase plankton_capture_radius_m (2.5–3.0); set microalgae_min_eff 0.10–0.20; align layer/light
+WARN,*,visits_uniform,all species have identical visits_sum,Ensure species-specific arrays are used; assert v>=e>=a when writing

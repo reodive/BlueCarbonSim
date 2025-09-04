@@ -1,0 +1,83 @@
+{
+  "capture_matrix": {
+    "src0": {
+      "Zostera marina": 1.2581192603202327,
+      "Halophila ovalis": 0.0,
+      "Posidonia oceanica": 0.0,
+      "Macrocystis pyrifera": 0.0,
+      "Saccharina japonica": 0.0,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.0,
+      "Spartina alterniflora": 0.0,
+      "Rhizophora spp.": 1.206715239091013
+    },
+    "src1": {
+      "Zostera marina": 0.0,
+      "Halophila ovalis": 0.0,
+      "Posidonia oceanica": 0.0,
+      "Macrocystis pyrifera": 0.0,
+      "Saccharina japonica": 0.0,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.0,
+      "Spartina alterniflora": 0.0,
+      "Rhizophora spp.": 0.0
+    },
+    "src2": {
+      "Zostera marina": 0.0,
+      "Halophila ovalis": 0.0,
+      "Posidonia oceanica": 12.477358623628716,
+      "Macrocystis pyrifera": 32.77657849500298,
+      "Saccharina japonica": 0.0,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.0,
+      "Spartina alterniflora": 0.0,
+      "Rhizophora spp.": 0.0
+    },
+    "src3": {
+      "Zostera marina": 0.0,
+      "Halophila ovalis": 0.0,
+      "Posidonia oceanica": 14.027556262714015,
+      "Macrocystis pyrifera": 34.3309690238596,
+      "Saccharina japonica": 0.0,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.0,
+      "Spartina alterniflora": 0.0,
+      "Rhizophora spp.": 0.0
+    },
+    "src4": {
+      "Zostera marina": 0.0,
+      "Halophila ovalis": 0.0,
+      "Posidonia oceanica": 0.0,
+      "Macrocystis pyrifera": 32.4585048514411,
+      "Saccharina japonica": 5.158898463253859e-06,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.0,
+      "Spartina alterniflora": 0.0,
+      "Rhizophora spp.": 0.0
+    },
+    "init": {
+      "Zostera marina": 0.0,
+      "Halophila ovalis": 0.5431736534953504,
+      "Posidonia oceanica": 4.780089424485543e-11,
+      "Macrocystis pyrifera": 122.27658118009353,
+      "Saccharina japonica": 130.11771044102503,
+      "Chlorella vulgaris": 0.0,
+      "Nannochloropsis gaditana": 0.20367835739575807,
+      "Spartina alterniflora": 53.8369772961312,
+      "Rhizophora spp.": 37.72788189475122
+    }
+  },
+  "median_abs_dy_at_injection": 1.7538094969937958,
+  "mean_travel_before_capture_px": 3.0645526947635418,
+  "species_share": {
+    "Zostera marina": 0.0026585124864961507,
+    "Halophila ovalis": 0.0011477719050144487,
+    "Posidonia oceanica": 0.05600712857781998,
+    "Macrocystis pyrifera": 0.46877226184487863,
+    "Saccharina japonica": 0.27494974645623327,
+    "Chlorella vulgaris": 0.0,
+    "Nannochloropsis gaditana": 0.00043038960887366404,
+    "Spartina alterniflora": 0.11376208988370803,
+    "Rhizophora spp.": 0.08227209923697582
+  }
+}

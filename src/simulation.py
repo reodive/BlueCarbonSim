@@ -806,14 +806,9 @@ def run_simulation(
 
     # 譌ｧ莠呈鋤: 蜷・ｨｮ縺ｮ蜷郁ｨ茨ｼ・陦靴SV・・
     for plant in plants:
-        # Raw units (particle counts); kept for backward compatibility
-        with open(os.path.join("results", f"result_{plant.name}.csv"), "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["total_absorbed", "total_fixed", "total_growth"])  # raw units
-            writer.writerow([plant.total_absorbed, plant.total_fixed, plant.total_growth])
-        # Slugged filename in mgC (new)
         slug = _slugify(plant.name)
-        with open(os.path.join("results", f"result_{slug}_mgC.csv"), "w", newline="") as f:
+        mgc_path = os.path.join("results", f"result_{slug}_mgC.csv")
+        with open(mgc_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["total_absorbed_mgC", "total_fixed_mgC", "total_growth_mgC"])
             writer.writerow([
@@ -821,6 +816,13 @@ def run_simulation(
                 plant.total_fixed * float(particle_mass_mgC),
                 plant.total_growth * float(particle_mass_mgC),
             ])
+        # index 情報を蓄積（名称/スラッグ/ファイルパス）
+        index_rows.append([
+            plant.name,
+            slug,
+            f"result_{slug}_mgC.csv",
+            f"time_series_{slug}_mgC.csv",
+        ])
 
     # 譁ｰ: 蜈ｨ菴薙し繝槭Μ
     with open(os.path.join("results", "summary_totals.csv"), "w", newline="") as f:
@@ -885,8 +887,18 @@ def run_simulation(
                     i,
                     series["total_absorbed"][i] * float(particle_mass_mgC),
                     series["total_fixed"][i] * float(particle_mass_mgC),
-                    series["total_growth"][i] * float(particle_mass_mgC),
-                ])
+                series["total_growth"][i] * float(particle_mass_mgC),
+            ])
+
+    # インデックス（どのファイルを見ればよいかを一覧化）
+    try:
+        with open(os.path.join("results", "index.csv"), "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["species", "slug", "summary_file_mgC", "timeseries_file_mgC"])
+            for row in index_rows:
+                writer.writerow(row)
+    except Exception as e:
+        print(f"[warn] results index write failed: {e}")
 
     # Consolidated per-species cumulative absorbed mgC timeseries
     try:
