@@ -992,11 +992,11 @@ def run_simulation(
             ])
 
     # 繧､繝ｳ繝・ャ繧ｯ繧ｹ・医←縺ｮ繝輔ぃ繧､繝ｫ繧定ｦ九ｌ縺ｰ繧医＞縺九ｒ荳隕ｧ蛹厄ｼ・    try:
-        with open(os.path.join("results", "index.csv"), "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["species", "slug", "summary_file_mgC", "timeseries_file_mgC"])
-            for row in index_rows:
-                writer.writerow(row)
+with open(os.path.join("results", "index.csv"), "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["species", "slug", "summary_file_mgC", "timeseries_file_mgC"])
+    for row in index_rows:
+        writer.writerow(row)
     except Exception as e:
         print(f"[warn] results index write failed: {e}")
 
