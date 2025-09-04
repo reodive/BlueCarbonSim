@@ -27,6 +27,12 @@ def diffuse_particles(particles, terrain, flow_field, *, cfl: float = 0.5, refle
     outflow_mass = 0.0
     for particle in particles:
         x, y = particle.x, particle.y
+        # remember previous position for swept-contact checks
+        try:
+            particle.x_prev = x
+            particle.y_prev = y
+        except Exception:
+            pass
         ix, iy = int(x), int(y)
         if 0 <= iy < flow_field.shape[0] and 0 <= ix < flow_field.shape[1]:
             flow_x, flow_y = flow_field[iy, ix]

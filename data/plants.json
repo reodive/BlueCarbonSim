@@ -2,7 +2,7 @@
   "Zostera marina": {
     "absorption_rate": 5.0,
     "growth_rate": 0.012,
-    "fixation_rate": 0.75,
+    "fixation_rate": 0.90,
     "light_tolerance": 0.35,
     "salinity_range": [10, 35],
     "depth_range": [0.5, 5],
@@ -52,7 +52,7 @@
   "Chlorella vulgaris": {
     "absorption_rate": 12.0,
     "growth_rate": 0.30,
-    "fixation_rate": 0.30,
+    "fixation_rate": 0.18,
     "light_tolerance": 0.10,
     "salinity_range": [0, 10],
     "depth_range": [0, 2],
@@ -62,7 +62,7 @@
   "Nannochloropsis gaditana": {
     "absorption_rate": 14.5,
     "growth_rate": 0.15,
-    "fixation_rate": 0.32,
+    "fixation_rate": 0.20,
     "light_tolerance": 0.12,
     "salinity_range": [20, 38],
     "depth_range": [0, 2],

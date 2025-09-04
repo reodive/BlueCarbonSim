@@ -28,6 +28,25 @@ from .utils.profile_adapter import normalize_profiles
 from math import hypot
 
 # ===== Guards & Metrics Helpers =====
+def _segment_circle_intersect(x0, y0, x1, y1, cx, cy, r):
+    """Return True if segment (x0,y0)-(x1,y1) intersects circle centered at (cx,cy) with radius r."""
+    dx = float(x1) - float(x0)
+    dy = float(y1) - float(y0)
+    fx = float(x0) - float(cx)
+    fy = float(y0) - float(cy)
+    a = dx * dx + dy * dy
+    if a <= 1e-12:
+        return (fx * fx + fy * fy) <= float(r) * float(r)
+    t = -(fx * dx + fy * dy) / a
+    if t < 0.0:
+        t = 0.0
+    elif t > 1.0:
+        t = 1.0
+    qx = float(x0) + t * dx
+    qy = float(y0) + t * dy
+    qdx = qx - float(cx)
+    qdy = qy - float(cy)
+    return (qdx * qdx + qdy * qdy) <= float(r) * float(r)
 def validate_geometry(
     sources: List[Tuple[int, int]],
     plants: List[Plant],
@@ -243,6 +262,22 @@ def run_simulation(
     tidal_period_steps = int(cfg.get("tidal_period_steps", 24))
     intertidal_submergence_fraction = float(cfg.get("intertidal_submergence_fraction", 0.35))
     intertidal_shallow_band_m = float(cfg.get("intertidal_shallow_band_m", 1.0))
+    # Encounter/uptake knobs (configurable)
+    use_swept_contact = bool(cfg.get("use_swept_contact", False))
+    seagrass_min_contact_steps = int(cfg.get("seagrass_min_contact_steps", 2))
+    microalgae_uptake_scale = float(cfg.get("microalgae_uptake_scale", 1.0))
+
+    # Eelgrass-favoring knobs (optional)
+    eelgrass_shallow_bonus = float(cfg.get("eelgrass_shallow_bonus", 1.2))
+    eelgrass_shallow_cutoff_m = float(cfg.get("eelgrass_shallow_cutoff_m", 3.0))
+    eelgrass_low_nutrient_bonus = float(cfg.get("eelgrass_low_nutrient_bonus", 0.3))
+    eelgrass_mid_boost_factor = float(cfg.get("eelgrass_mid_boost_factor", 2.0))
+    eelgrass_mid_boost_center_frac = float(cfg.get("eelgrass_mid_boost_center_frac", 0.5))
+    eelgrass_mid_boost_k = float(cfg.get("eelgrass_mid_boost_k", 10.0))
+
+    # Microalgae seasonality knobs
+    chl_mortality_amp = float(cfg.get("chl_mortality_amp", 0.05))
+    chl_uptake_season_amp = float(cfg.get("chl_uptake_season_amp", 0.3))
 
     # 驟咲ｽｮ・・遞ｮ縺ｮ讀咲黄縺ｮ繝ｬ繧､繧｢繧ｦ繝茨ｼ・
     plant_positions = {
@@ -329,6 +364,14 @@ def run_simulation(
             y=pos["y"],
             radius=pos["radius"],
         )
+        # Optional per-config adjustment: boost eelgrass footprint radius
+        if p.name == "Zostera marina":
+            try:
+                zrad = cfg.get("zostera_radius", None)
+                if zrad is not None:
+                    p.radius = int(zrad)
+            except Exception:
+                pass
         # depth range 繧貞ｱ樊ｧ縺ｨ縺励※莉倅ｸ・
         setattr(p, "model_depth_range", tuple(profile.get("model_depth_range", (1, 6))))
         plants.append(p)
@@ -447,6 +490,20 @@ def run_simulation(
             eff = apply_depth_filter(eff, plant, env)  # 豺ｱ蠎ｦ繝ｬ繝ｳ繧ｸ螟悶・0
             plant_env[plant.name] = env
             plant_eff[plant.name] = eff
+            # Favor eelgrass (Zostera marina) in shallow, low-nutrient conditions
+            if plant.name == "Zostera marina":
+                try:
+                    d = float(env.get("depth_m", 0.0))
+                    if d <= float(eelgrass_shallow_cutoff_m):
+                        plant_eff[plant.name] = float(min(max(plant_eff[plant.name] * float(eelgrass_shallow_bonus), 0.0), 1.0))
+                except Exception:
+                    pass
+                try:
+                    nutr = float(env.get("nutrient", 1.0))
+                    bonus = float(1.0 + eelgrass_low_nutrient_bonus * (1.0 - max(min(nutr, 1.0), 0.0)))
+                    plant_eff[plant.name] = float(min(max(plant_eff[plant.name] * bonus, 0.0), 1.0))
+                except Exception:
+                    pass
 
             if i == 0:
                 env_series.append(eff)
@@ -498,6 +555,16 @@ def run_simulation(
                 dy = particle.y - plant.y
                 r2 = dx * dx + dy * dy
                 within_radius = r2 <= (plant.radius ** 2)
+                # Swept-contact detection for fast pass-through (optional, seagrasses)
+                swept_hit = False
+                if use_swept_contact and name in ("Zostera marina", "Halophila ovalis"):
+                    try:
+                        swept_hit = _segment_circle_intersect(
+                            getattr(particle, "x_prev", particle.x), getattr(particle, "y_prev", particle.y),
+                            particle.x, particle.y, plant.x, plant.y, plant.radius
+                        )
+                    except Exception:
+                        swept_hit = False
                 # 霑第磁谿ｵ髫趣ｼ郁ｨｺ譁ｭ逕ｨ・・                visited = False
                 eligible_flag = False
                 if name in ("Chlorella vulgaris", "Nannochloropsis gaditana"):
@@ -544,7 +611,8 @@ def run_simulation(
                         if name == "Zostera marina":
                             sg_band_m = 4.0
                         sg_band_px = sg_band_m / meters_per_pixel
-                        allowed = within_radius and (abs(dy) <= sg_band_px)
+                        base_contact = (within_radius or swept_hit)
+                        allowed = base_contact and (abs(dy) <= sg_band_px)
 
                 # 単調性保証: allowed であれば eligible/visited も真にする
                 if allowed:
@@ -560,6 +628,20 @@ def run_simulation(
                 if name in ("Chlorella vulgaris", "Nannochloropsis gaditana"):
                     eff_local = max(eff_local, float(microalgae_min_eff))
                 uptake_ratio = eff_local * getattr(plant, "absorption_efficiency", 1.0)
+                # Seasonal shaping: microalgae summer boost; eelgrass mid-game boost
+                if name == "Chlorella vulgaris":
+                    s = 0.5 + 0.5 * np.sin(2.0 * np.pi * (step / float(max(total_steps, 1))))
+                    uptake_ratio *= float(1.0 + chl_uptake_season_amp * s)
+                # Attenuate microalgae to prevent full upstream depletion (configurable)
+                if name in ("Chlorella vulgaris", "Nannochloropsis gaditana") and microalgae_uptake_scale != 1.0:
+                    uptake_ratio *= float(microalgae_uptake_scale)
+                if name == "Zostera marina":
+                    t = step / float(max(total_steps, 1))
+                    center = float(eelgrass_mid_boost_center_frac)
+                    k = float(eelgrass_mid_boost_k)
+                    L = 1.0 / (1.0 + np.exp(-k * (t - center)))
+                    factor = 1.0 + (float(eelgrass_mid_boost_factor) - 1.0) * float(L)
+                    uptake_ratio *= float(factor)
                 # 貎ｮ髢灘ｸｯ縺ｮ騾｣邯壹ご繝ｼ繝茨ｼ・..1・・
                 if name in ("Spartina alterniflora", "Rhizophora spp."):
                     phase = 2.0 * np.pi * ((step % max(tidal_period_steps, 1)) / max(tidal_period_steps, 1))
@@ -576,12 +658,19 @@ def run_simulation(
                 if not hasattr(particle, "contact_steps"):
                     particle.contact_steps = {}
                 prev_cs = int(particle.contact_steps.get(name, 0))
-                if within_radius:
-                    particle.contact_steps[name] = prev_cs + 1
+                if name in ("Zostera marina", "Halophila ovalis"):
+                    # seagrass: allow swept-contact and configurable dwell requirement
+                    base_contact = (within_radius or swept_hit)
+                    particle.contact_steps[name] = (prev_cs + 1) if base_contact else 0
+                    need_steps = int(max(seagrass_min_contact_steps, 0))
+                    passes_dwell = int(particle.contact_steps.get(name, 0)) >= need_steps
+                    contact_ok = base_contact
                 else:
-                    particle.contact_steps[name] = 0
+                    particle.contact_steps[name] = (prev_cs + 1) if within_radius else 0
+                    passes_dwell = int(particle.contact_steps.get(name, 0)) >= 2
+                    contact_ok = within_radius
 
-                if eligible_flag and within_radius and int(particle.contact_steps.get(name, 0)) >= 2:
+                if eligible_flag and contact_ok and passes_dwell:
                     if uptake_ratio > 0.0 and random.random() < uptake_ratio:
                         candidates.append((plant, uptake_ratio))
 
@@ -690,7 +779,11 @@ def run_simulation(
         reinj_mgC_step = 0.0
         for plant in plants:
             if plant.name == "Chlorella vulgaris" and plant.total_growth > 0:
-                mortal = plant.total_growth * chl_mortality
+                # seasonally modulated mortality: higher outside summer
+                s = 0.5 + 0.5 * np.sin(2.0 * np.pi * (step / float(max(total_steps, 1))))
+                rate_t = float(chl_mortality + chl_mortality_amp * (1.0 - s))
+                rate_t = float(min(max(rate_t, 0.0), 0.95))
+                mortal = plant.total_growth * rate_t
                 if mortal > 0:
                     plant.total_growth -= mortal
                     # mgC 繧堤ｲ貞ｭ先焚縺ｫ螟画鋤縺励※縲√◎縺ｮ蝣ｴ縺ｫ蜀肴ｳｨ蜈･

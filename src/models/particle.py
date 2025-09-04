@@ -9,6 +9,9 @@ class Particle:
     def __init__(self, x: float, y: float, **kwargs):
         self.x = x
         self.y = y
+        # Previous position (for swept-contact checks)
+        self.x_prev = kwargs.get("x_prev", x)
+        self.y_prev = kwargs.get("y_prev", y)
         self.mass = kwargs.get("mass", 1.0)
         self.form = kwargs.get("form", "CO2")
         self.reactivity = kwargs.get("reactivity", 1.0)
